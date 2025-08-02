@@ -1,0 +1,6 @@
+[package]
+name = "loom-global-interceptor"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="EMPTY_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/loom-cli/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-config/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-core/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-functions/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-interactive/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-interpreter/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-parser/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-plugin/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-scheduler/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-directives-interceptor/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/loom-global-interceptor/src" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/loom-cli/target" />
+      <excludeFolder url="file://$MODULE_DIR$/loom-config/target" />
+      <excludeFolder url="file://$MODULE_DIR$/loom-core/target" />
+      <excludeFolder url="file://$MODULE_DIR$/loom-interactive/target" />
+      <excludeFolder url="file://$MODULE_DIR$/loom-interpreter/target" />
+      <excludeFolder url="file://$MODULE_DIR$/loom-plugin/target" />
+      <excludeFolder url="file://$MODULE_DIR$/loom-scheduler/target" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+</module>

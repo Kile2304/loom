@@ -1,0 +1,15 @@
+[package]
+name = "loom-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+async-trait.workspace = true
+
+serde = "1.0.219"
+serde_json = "1.0.141"
+lazy_static = "1.5.0"
+chrono = "0.4.41"
+regex = "1.11.1"
+uuid = { version = "1.17.0", features = ["v4"] }

@@ -1,0 +1,8 @@
+[package]
+name = "loom-directives"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+loom-core = { path = "../loom-core" }
+async-trait.workspace = true

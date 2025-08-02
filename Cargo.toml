@@ -1,0 +1,34 @@
+name = "loom"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+resolver = "2"
+members = [
+    "loom-cli",
+    "loom-config",
+    "loom-core",
+    "loom-directives-interceptor",
+    "loom-functions", "loom-global-interceptor",
+    "loom-interactive",
+    "loom-interpreter", "loom-parser",
+    "loom-plugin",
+    "loom-scheduler",
+]
+
+[profile.release-opt]
+inherits = "release"
+codegen-units = 1
+debug = false
+lto = true
+incremental = false
+opt-level = 3
+overflow-checks = false
+strip = "debuginfo"
+
+[workspace.dependencies]
+# Async e Threading
+tokio = "1.47.1"
+async-trait = "0.1.88"
