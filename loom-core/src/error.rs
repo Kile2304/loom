@@ -219,6 +219,16 @@ impl LoomError {
             Self::SystemError { .. } => ErrorSeverity::Error,
         }
     }
+
+    pub fn with_context(mut self, context: impl Into<String>) -> Self {
+        match &mut self {
+            Self::ExecutionError { message, .. } => {
+                *message = format!("{}: {}", context.into(), message);
+            }
+            _ => {}
+        }
+        self
+    }
 }
 
 /// Error severity levels

@@ -1,8 +1,7 @@
-use crate::context::LoomContext;
-use crate::interceptor::context::ExecutionContext;
+use std::sync::Arc;
+use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::global::config::GlobalInterceptorConfig;
 use crate::interceptor::global::GlobalInterceptorCategory;
-use crate::interceptor::hook::registry::HookRegistry;
 use crate::interceptor::InterceptorChain;
 use crate::interceptor::result::ExecutionResult;
 use crate::interceptor::scope::ExecutionTarget;
@@ -36,13 +35,11 @@ pub trait GlobalInterceptor: Send + Sync {
     }
 
     /// Intercetta l'esecuzione (stesso pattern degli interceptor normali)
-    async fn intercept<'a>(
-        &'a self,
-        loom_context: &'a LoomContext,
-        context: &'a mut ExecutionContext,
-        hook_registry: &'a HookRegistry,
-        config: &'a GlobalInterceptorConfig,
-        next: Box<InterceptorChain<'a>>,
+    async fn intercept(
+        &self,
+        context: InterceptorContext<'_>,
+        config: &GlobalInterceptorConfig,
+        next: Box<InterceptorChain<'_>>,
     ) -> Result<ExecutionResult, String>;
 
     /// Valuta una condizione di attivazione

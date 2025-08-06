@@ -30,5 +30,5 @@ strip = "debuginfo"
 
 [workspace.dependencies]
 # Async e Threading
-tokio = "1.47.1"
+tokio = { version = "1.47.1", features = ["macros", "fs", "rt", "time", "sync"] }
 async-trait = "0.1.88"

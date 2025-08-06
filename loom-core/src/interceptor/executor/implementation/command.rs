@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::process::Command;
+use std::sync::Arc;
 use crate::ast::Expression;
 use crate::context::LoomContext;
-use crate::interceptor::context::ExecutionContext;
+use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::executor::config::ExecutorConfig;
 use crate::interceptor::executor::ExecutorInterceptor;
 use crate::interceptor::hook::registry::HookRegistry;
@@ -24,19 +26,17 @@ impl ExecutorInterceptor for CommandExecutorInterceptor {
     fn default_config(&self) -> ExecutorConfig {
         ExecutorConfig::default()
     }
-    async fn intercept<'a>(
-        &'a self,
-        loom_context: &'a LoomContext,
-        context: &'a mut ExecutionContext,
-        _hook_registry: &'a HookRegistry,
+    async fn intercept(
+        &self,
+        context: InterceptorContext<'_>,
         // TODO: Queste config mi potrebbero servie a qualcosa in questo livello
-        _config: &'a ExecutorConfig,
+        _config: &ExecutorConfig,
         // TODO: Non dovrebbe esistere un NEXT perchè gli executor sono terminali e contengono altri interceptor
-        _next: Box<InterceptorChain<'a>>,
+        _next: Box<InterceptorChain<'_>>,
     ) -> InterceptorResult {
         // TODO: Aggiungere hooks di "inizio", "fine", "success" e "error" definition
         // Esegue il comando
-        self.launch_interceptor(loom_context, context)
+        self.launch_interceptor(context)
     }
 
 }
@@ -46,13 +46,12 @@ impl CommandExecutorInterceptor {
     
     fn launch_interceptor(
         &self,
-        loom_context: &LoomContext,
-        context: &mut ExecutionContext,
+        context: InterceptorContext<'_>,
     ) -> Result<ExecutionResult, String> {
         let command =
             self.0.iter()
                 .map(|it|
-                    it.evaluate(loom_context, context)
+                    it.evaluate(context.loom_context, context.execution_context.deref())
                         .map(|it|
                             match it {
                                 LoomValue::Literal(lit) => lit.stringify(),
@@ -63,7 +62,7 @@ impl CommandExecutorInterceptor {
                 .collect::<Result<Vec<_>, String>>()?
             .join("");
         
-        self.execute_command(&command, context)
+        self.execute_command(&command, context.execution_context.deref())
     }
     
     /// Esegue un comando in modo cross-platform

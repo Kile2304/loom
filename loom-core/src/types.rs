@@ -62,7 +62,7 @@ pub struct Signature {
     pub parameters: Vec<ParameterDefinition>, // Use ParameterDefinition here
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub enum ParallelizationKind {
     Parallel {
         max_thread: u8,

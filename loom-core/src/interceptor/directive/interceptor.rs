@@ -1,8 +1,8 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use crate::ast::DirectiveCall;
 use crate::context::LoomContext;
-use crate::interceptor::context::ExecutionContext;
-use crate::interceptor::hook::registry::HookRegistry;
+use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::{InterceptorChain, InterceptorResult};
 use crate::types::LoomValue;
 
@@ -12,10 +12,8 @@ pub trait DirectiveInterceptor: Send + Sync {
 
     /// Intercetta con accesso al hook registry
     async fn intercept<'a>(
-        &'a self,
-        loom_context: &'a LoomContext,
-        context: &'a mut ExecutionContext,
-        hooks: &'a HookRegistry,
+        &self,
+        context: InterceptorContext<'a>,
         next: Box<InterceptorChain<'a>>,
     ) -> InterceptorResult;
 

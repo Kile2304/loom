@@ -7,5 +7,5 @@ pub mod definition;
 
 
 pub fn empty_execute_intercept_next<'a>() -> Box<InterceptorChain<'a>> {
-    Box::new(|_, _, _| interceptor_result!(Err("You are trying to call an empty interceptor chain".to_string())) )
+    Box::new(|_| interceptor_result!(Err("You are trying to call an empty interceptor chain".to_string())) )
 }

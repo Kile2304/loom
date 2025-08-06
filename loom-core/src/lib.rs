@@ -4,6 +4,7 @@ pub mod context;
 pub mod error;
 pub mod definition;
 pub mod interceptor;
+pub mod event;
 
 pub struct InputArg {
     name: String,

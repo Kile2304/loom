@@ -80,7 +80,8 @@ impl LoomContext {
 
     /// Find an enum by name
     pub fn find_enum(&self, name: &str) -> Option<&EnumDef> {
-        self.enums_def_ref.get(name).map(|it| &self.modules[&it.0].enums[&it.1])
+        self.enums_def_ref.get(name)
+            .and_then(|index| self.modules.get(&index.0)?.enums.get(&index.1))
     }
 
     /// Get variable value

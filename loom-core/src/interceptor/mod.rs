@@ -1,6 +1,7 @@
 use std::pin::Pin;
+use std::sync::Arc;
 use crate::context::LoomContext;
-use crate::interceptor::context::ExecutionContext;
+use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::directive::ActiveDirectiveInterceptor;
 use crate::interceptor::directive::interceptor::DirectiveInterceptor;
 use crate::interceptor::executor::ActiveExecutorInterceptor;
@@ -22,8 +23,8 @@ pub mod priority;
 /// **LoomContext**:        The general context with every, enum, definition, variable...
 /// **ExecutionContext**:   The context for the current execution, it's mutable.
 /// **HookRegistry**:       The registry with all the hooks.
-pub type InterceptorChain<'a> = dyn FnOnce(&'a LoomContext, &'a mut ExecutionContext, &'a HookRegistry)
-    -> Pin<Box<dyn Future<Output = Result<ExecutionResult, String>> + Send + 'a>> + Send + 'a;
+pub type InterceptorChain<'a> = dyn FnOnce(InterceptorContext<'a>)
+    -> Pin<Box<dyn Future<Output = InterceptorResult> + Send + 'a>> + Send + 'a;
 
 pub type InterceptorResult = Result<ExecutionResult, String>;
 

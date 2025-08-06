@@ -1,9 +1,11 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use crate::context::LoomContext;
+use crate::event::channel::ExecutionEventChannel;
 use crate::InputArg;
 use crate::interceptor::{ActiveInterceptor, InterceptorChain, InterceptorResult};
-use crate::interceptor::context::ExecutionContext;
+use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::directive::ActiveDirectiveInterceptor;
 use crate::interceptor::directive::interceptor::DirectiveInterceptor;
 use crate::interceptor::directive::manager::DirectiveInterceptorManager;
@@ -84,18 +86,20 @@ impl InterceptorEngine {
         let target = ExecutionTarget::Definition { name: "".to_string(), blocks: vec![], directives: vec![] };
 
         let mut context = ExecutionContext {
-            variables: loom_context.get_variables(&def_name).unwrap().clone(),
+            variables: Cow::Owned(loom_context.get_variables(&def_name).unwrap().clone()),
             env_vars: std::env::vars().collect(),
             working_dir: std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
             dry_run: false,
             metadata: HashMap::new(),
             parallelization_kind: ParallelizationKind::Sequential,
             target,
-            previous_result: None,
         };
 
         definition_target.signature.args_into_variable(loom_context, &context, input_args)?.into_iter()
-            .for_each(|(variable_name, value)| { context.variables.insert(variable_name, value); });
+            .for_each(|(variable_name, value)| {
+                context.variables.to_mut().insert(variable_name, value);
+                // context.variables.insert(variable_name, value); 
+            });
 
         let interceptor_chain =
             self.build_target_chain(
@@ -105,8 +109,16 @@ impl InterceptorEngine {
                 &self.global_manager.get_active(&context)
             )?;
 
+        let interceptor_context = InterceptorContext {
+            loom_context,
+            execution_context: Cow::Owned(context),
+            hook_registry: &self.hook_registry,
+            // TODO: Deve essere passato da fuori
+            channel: ExecutionEventChannel::new().0,
+        };
+
         // Esegui la chain unificata
-        Self::execute_chain(loom_context, &mut context, &self.hook_registry, &interceptor_chain).await
+        Self::execute_chain(interceptor_context, &interceptor_chain).await
     }
 
     fn build_target_chain(
@@ -234,42 +246,35 @@ impl InterceptorEngine {
     }
 
     /// Esegue la chain unificata
-    pub async fn execute_chain(
-        loom_context: &LoomContext,
-        context: &mut ExecutionContext,
-        hook_registry: &HookRegistry,
-        chain: &[ActiveInterceptor],
+    pub async fn execute_chain<'a>(
+        context: InterceptorContext<'a>,
+        chain: &'a [ActiveInterceptor],
     ) -> Result<ExecutionResult, String> {
-        Self::execute_chain_recursive(loom_context, context, hook_registry, chain, 0).await
+        Self::execute_chain_recursive(context, chain, 0).await
     }
 
     // TODO: IMPORTANTE!!! La catena allo stesso livello dell'albero, ma, successiva, deve avere come parametro, il risultato della precedente!!!
 
     /// Esecuzione ricorsiva della chain
-    async fn execute_chain_recursive(
-        loom_context: &LoomContext,
-        context: &mut ExecutionContext,
-        hook_registry: &HookRegistry,
-        chain: &[ActiveInterceptor],
+    async fn execute_chain_recursive<'a>(
+        context: InterceptorContext<'a>,
+        chain: &'a [ActiveInterceptor],
         index: usize,
     ) -> InterceptorResult {
 
-        let interceptor = &chain[index];
-
         let next = Self::create_next_chain(chain, index + 1);
 
-        match interceptor {
+        match &chain[index] {
             ActiveInterceptor::Global(global) => {
-                global.interceptor.intercept(loom_context, context, hook_registry, &global.config, Box::new(next)).await
+                // global.interceptor.intercept(context, &global.config, Box::new(next)).await
+                Err("stuff".to_string())
             }
             ActiveInterceptor::Directive(directive) => {
-                // Inietta parametri nel context
-                // context.directive_params = directive.params.clone();
-
-                directive.interceptor.intercept(loom_context, context, hook_registry, Box::new(next)).await
+                directive.interceptor.intercept(context, Box::new(next)).await
             }
             ActiveInterceptor::Executor(executor) => {
-                executor.interceptor.intercept(loom_context, context, hook_registry, &executor.config, Box::new(next)).await
+                executor.interceptor.intercept(context, &executor.config, Box::new(next)).await
+                // Err("random".to_string())
             }
         }
     }
@@ -278,8 +283,8 @@ impl InterceptorEngine {
         chain: &'a [ActiveInterceptor],
         next_index: usize
     ) -> Box<InterceptorChain<'a>> {
-        Box::new(move |loom_context: &'a LoomContext, ctx: &'a mut ExecutionContext, hooks: &'a HookRegistry| {
-            Box::pin(Self::execute_chain_recursive(loom_context, ctx, hooks, chain, next_index))
+        Box::new(move |context: InterceptorContext<'a>,| {
+            Box::pin(Self::execute_chain_recursive(context, chain, next_index))
         })
     }
 
@@ -298,13 +303,12 @@ impl InterceptorEngine {
     /// Diagnostica: lista interceptor attivi per un target
     pub fn list_active_interceptors(&self, target: ExecutionTarget) -> Vec<(String, String, i32)> {
         let context = ExecutionContext {
-            variables: HashMap::new(),
+            variables: Cow::Owned(HashMap::new()),
             env_vars: std::env::vars().collect(),
             working_dir: None,
             dry_run: false,
             metadata: HashMap::new(),
             parallelization_kind: ParallelizationKind::Sequential,
-            previous_result: None,
             target,
         };
 
