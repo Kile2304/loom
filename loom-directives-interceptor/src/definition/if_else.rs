@@ -17,11 +17,11 @@ impl DirectiveInterceptor for IfElseDirectiveInterceptor {
         "if_else"
     }
 
-    async fn intercept<'a>(&'a self, context: InterceptorContext<'a>, next: Box<InterceptorChain<'a>>) -> InterceptorResult {
+    async fn intercept<'a>(&'a self, _context: InterceptorContext<'a>, _next: Box<InterceptorChain<'a>>) -> InterceptorResult {
         todo!()
     }
 
-    fn parse_parameters(&self, loom_context: &LoomContext, execution_context: &ExecutionContext, call: &DirectiveCall) -> Result<HashMap<String, LoomValue>, String> {
+    fn parse_parameters(&self, _loom_context: &LoomContext, _execution_context: &ExecutionContext, _call: &DirectiveCall) -> Result<HashMap<String, LoomValue>, String> {
         todo!()
     }
 }

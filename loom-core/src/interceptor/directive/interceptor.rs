@@ -12,7 +12,7 @@ pub trait DirectiveInterceptor: Send + Sync {
 
     /// Intercetta con accesso al hook registry
     async fn intercept<'a>(
-        &self,
+        &'a self,
         context: InterceptorContext<'a>,
         next: Box<InterceptorChain<'a>>,
     ) -> InterceptorResult;

@@ -26,13 +26,13 @@ impl ExecutorInterceptor for CommandExecutorInterceptor {
     fn default_config(&self) -> ExecutorConfig {
         ExecutorConfig::default()
     }
-    async fn intercept(
-        &self,
-        context: InterceptorContext<'_>,
+    async fn intercept<'a>(
+        &'a self,
+        context: InterceptorContext<'a>,
         // TODO: Queste config mi potrebbero servie a qualcosa in questo livello
         _config: &ExecutorConfig,
         // TODO: Non dovrebbe esistere un NEXT perchè gli executor sono terminali e contengono altri interceptor
-        _next: Box<InterceptorChain<'_>>,
+        _next: Box<InterceptorChain<'a>>,
     ) -> InterceptorResult {
         // TODO: Aggiungere hooks di "inizio", "fine", "success" e "error" definition
         // Esegue il comando

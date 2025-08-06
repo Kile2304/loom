@@ -18,7 +18,7 @@ impl ParallelDirectiveInterceptor {
 impl DirectiveInterceptor for ParallelDirectiveInterceptor {
     fn directive_name(&self) -> &str { "parallel" }
 
-    async fn intercept<'a>(&self, mut context: InterceptorContext<'a>, next: Box<InterceptorChain<'a>>) -> InterceptorResult
+    async fn intercept<'a>(&'a self, mut context: InterceptorContext<'a>, next: Box<InterceptorChain<'a>>) -> InterceptorResult
     {
         println!("⚡ Parallel: Enabling parallel execution...");
         // context.metadata.insert("parallel".to_string(), "true".to_string());
