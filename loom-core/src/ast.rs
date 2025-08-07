@@ -9,7 +9,7 @@ use crate::interceptor::context::ExecutionContext;
 pub struct Definition {
     pub kind: DefinitionKind,
     pub signature: Signature,
-    pub body: Block,
+    pub body: Vec<Block>,
     pub directives: Vec<DirectiveCall>,
     pub position: Position,
     pub module_index: usize,
@@ -19,6 +19,8 @@ pub struct Definition {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
     pub statements: Vec<Statement>,
+    pub directives: Vec<DirectiveCall>, // @if, @for, etc.
+    pub label: Vec<Expression>, // Optional implicit (vec may be empty)
 }
 
 /// Individual statement in a block
@@ -27,7 +29,6 @@ pub enum Statement {
     /// Shell command execution
     Command {
         parts: Vec<Expression>,
-        label: Vec<Expression>, // Optional implicit (vec may be empty)
         directives: Vec<DirectiveCall>, // Direttive anche sui singoli comandi
     },
 
@@ -36,12 +37,6 @@ pub enum Statement {
         name: String,
         args: Vec<Expression>,
         directives: Vec<DirectiveCall>, // Direttive anche sulle singole call
-    },
-
-    /// Block with directives (for control flow)
-    Block {
-        statements: Vec<Statement>,
-        directives: Vec<DirectiveCall>, // @if, @for, etc.
     },
 
     // /// Expression statement
@@ -105,6 +100,7 @@ pub enum Expression {
     },
 }
 
+
 /// Parts of string interpolation
 #[derive(Debug, Clone, PartialEq)]
 pub enum InterpolationPart {
@@ -167,14 +163,11 @@ pub enum DirectiveArg {
 // }
 
 impl Block {
-    pub fn new() -> Self {
-        Self {
-            statements: Vec::new(),
-        }
-    }
 
-    pub fn with_statements(statements: Vec<Statement>) -> Self {
-        Self { statements }
+    pub fn new(statements: Vec<Statement>, directives: Vec<DirectiveCall>, label: Vec<Expression>) -> Self {
+        Self {
+            statements, directives, label
+        }
     }
 
     pub fn is_empty(&self) -> bool {

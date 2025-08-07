@@ -230,15 +230,17 @@ impl LoomContext {
         self.validate_block_references(&definition.body, errors);
     }
 
-    fn validate_block_references(&self, block: &Block, errors: &mut Vec<String>) {
-        for statement in &block.statements {
-            match statement {
-                Statement::Call { name, .. } => {
-                    if !self.definitions_ref.contains_key(name) {
-                        errors.push(format!("Undefined reference: {}", name));
+    fn validate_block_references(&self, blocks: &Vec<Block>, errors: &mut Vec<String>) {
+        for block in blocks {
+            for statement in &block.statements {
+                match statement {
+                    Statement::Call { name, .. } => {
+                        if !self.definitions_ref.contains_key(name) {
+                            errors.push(format!("Undefined reference: {}", name));
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
         }
     }

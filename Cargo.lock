@@ -230,6 +230,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "lazy_static",
+ "log",
  "regex",
  "serde",
  "serde_json",

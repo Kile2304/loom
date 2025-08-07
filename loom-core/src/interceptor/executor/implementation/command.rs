@@ -13,7 +13,7 @@ use crate::interceptor::result::ExecutionResult;
 use crate::interceptor_result;
 use crate::types::LoomValue;
 
-pub struct CommandExecutorInterceptor(pub Vec<Expression>, pub Option<String>);
+pub struct CommandExecutorInterceptor(pub Vec<Expression>);
 
 #[async_trait::async_trait]
 impl ExecutorInterceptor for CommandExecutorInterceptor {
@@ -39,6 +39,10 @@ impl ExecutorInterceptor for CommandExecutorInterceptor {
         self.launch_interceptor(context)
     }
 
+    fn need_chain(&self) -> bool {
+        false
+    }
+
 }
 
 
@@ -51,7 +55,7 @@ impl CommandExecutorInterceptor {
         let command =
             self.0.iter()
                 .map(|it|
-                    it.evaluate(context.loom_context, context.execution_context.deref())
+                    it.evaluate(context.loom_context, context.execution_context.read().map_err(|_| format!("Error while trying to read"))?.deref())
                         .map(|it|
                             match it {
                                 LoomValue::Literal(lit) => lit.stringify(),
@@ -62,7 +66,7 @@ impl CommandExecutorInterceptor {
                 .collect::<Result<Vec<_>, String>>()?
             .join("");
         
-        self.execute_command(&command, context.execution_context.deref())
+        self.execute_command(&command, context.execution_context.read().map_err(|_| format!("Error while trying to read"))?.deref())
     }
     
     /// Esegue un comando in modo cross-platform

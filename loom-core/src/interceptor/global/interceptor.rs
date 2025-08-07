@@ -4,7 +4,7 @@ use crate::interceptor::global::config::GlobalInterceptorConfig;
 use crate::interceptor::global::GlobalInterceptorCategory;
 use crate::interceptor::InterceptorChain;
 use crate::interceptor::result::ExecutionResult;
-use crate::interceptor::scope::ExecutionTarget;
+use crate::interceptor::scope::{ExecutionActivity, ExecutionScope};
 
 #[async_trait::async_trait]
 /// Trait per interceptor globali
@@ -46,10 +46,10 @@ pub trait GlobalInterceptor: Send + Sync {
     fn evaluate_condition(&self, condition: &ActivationCondition, context: &ExecutionContext) -> bool {
         match condition {
             ActivationCondition::TargetType(types) => {
-                let target_type = match &context.target {
-                    ExecutionTarget::Command { .. } => "command",
-                    ExecutionTarget::Pipeline { .. } => "pipeline",
-                    ExecutionTarget::Job { .. } => "job",
+                let target_type = match &context.scope {
+                    ExecutionScope::Command => "command",
+                    ExecutionScope::Pipeline => "pipeline",
+                    ExecutionScope::Job => "job",
                     // ExecutionTarget::Definition { kind, .. } => match kind {
                     //     DefinitionKind::Recipe => "recipe",
                     //     DefinitionKind::Job => "job",
@@ -70,14 +70,16 @@ pub trait GlobalInterceptor: Send + Sync {
                 envs.contains(&current_env)
             }
             ActivationCondition::CommandPattern(regex) => {
-            if let ExecutionTarget::Command (c) = &context.target {
-                    // let cmd_str = c.command.join(" ");
-                    // regex.is_match(&cmd_str)
-                    // TODO: Sistemare
-                    false
-                } else {
-                    false
-                }
+                // if let ExecutionActivity::Command (c) = &context.target {
+                //     // let cmd_str = c.command.join(" ");
+                //     // regex.is_match(&cmd_str)
+                //     // TODO: Sistemare
+                //     false
+                // } else {
+                //     false
+                // }
+                // TODO: Rivalutare
+                false
             }
             ActivationCondition::Workspace(workspaces) => {
                 let current_workspace = context.working_dir
@@ -105,6 +107,8 @@ pub trait GlobalInterceptor: Send + Sync {
             }
         }
     }
+
+    fn need_chain(&self) -> bool;
 
     /// Categoria dell'interceptor (per organizing/UI)
     fn category(&self) -> GlobalInterceptorCategory {

@@ -1,28 +1,30 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::rc::Rc;
+use std::sync::{Arc, RwLock};
 use crate::context::LoomContext;
 use crate::event::channel::ExecutionEventChannel;
 use crate::interceptor::hook::registry::HookRegistry;
-use crate::interceptor::scope::ExecutionTarget;
+use crate::interceptor::scope::{ExecutionActivity, ExecutionScope};
 use crate::types::{LoomValue, ParallelizationKind};
 
 /// Execution context for runtime
-#[derive(Debug, Default, Clone)]
-pub struct ExecutionContext<'a> {
+#[derive(Debug, Clone)]
+pub struct ExecutionContext {
     // TODO: Valutare,     variables: Cow<'a, HashMap<String, LoomValue>>,
-    // pub variables: HashMap<String, LoomValue>,
-    pub variables: Cow<'a, HashMap<String, LoomValue>>,
+    pub variables: HashMap<String, LoomValue>,
+    // pub variables: Cow<'a, HashMap<String, LoomValue>>,
     pub env_vars: HashMap<String, String>,
     pub working_dir: Option<String>,
     pub dry_run: bool,
-    pub target: ExecutionTarget,
+    pub scope: ExecutionScope,
     pub parallelization_kind: ParallelizationKind,
     pub metadata: HashMap<String, String>,
 }
 
 
-impl<'a> ExecutionContext<'a> {
+impl ExecutionContext {
     pub fn get_variable(&self, name: &str) -> Option<LoomValue> {
         self.variables.get(name).map(|it| it.clone())
     }
@@ -31,7 +33,7 @@ impl<'a> ExecutionContext<'a> {
 #[derive(Clone)]
 pub struct InterceptorContext<'a> {
     pub loom_context: &'a LoomContext,
-    pub execution_context: Cow<'a, ExecutionContext<'a>>,
+    pub execution_context: Arc<RwLock<ExecutionContext>>,
     pub hook_registry: &'a HookRegistry,
     pub channel: ExecutionEventChannel,
 }

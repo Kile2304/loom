@@ -22,5 +22,7 @@ pub trait ExecutorInterceptor: Send + Sync {
         config: &ExecutorConfig,
         next: Box<InterceptorChain<'a>>,
     ) -> InterceptorResult;
+    
+    fn need_chain(&self) -> bool;
 
 }

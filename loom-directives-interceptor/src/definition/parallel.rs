@@ -22,7 +22,7 @@ impl DirectiveInterceptor for ParallelDirectiveInterceptor {
     {
         println!("⚡ Parallel: Enabling parallel execution...");
         // context.metadata.insert("parallel".to_string(), "true".to_string());
-        context.execution_context.to_mut().parallelization_kind = ParallelizationKind::Parallel { max_thread: 2 };
+        context.execution_context.write().map_err(|_| format!("Error while trying to write"))?.parallelization_kind = ParallelizationKind::Parallel { max_thread: 2 };
         next(context).await
     }
 
@@ -33,6 +33,10 @@ impl DirectiveInterceptor for ParallelDirectiveInterceptor {
         _call: &DirectiveCall
     ) -> Result<HashMap<String, LoomValue>, String> {
         Ok(HashMap::new())
+    }
+
+    fn need_chain(&self) -> bool {
+        false
     }
 
     fn priority(&self) -> i32 { 4000 } // DIRECTIVE_NORMAL range

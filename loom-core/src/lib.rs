@@ -1,3 +1,5 @@
+use crate::ast::Expression;
+
 pub mod types;
 pub mod ast;
 pub mod context;
@@ -8,5 +10,5 @@ pub mod event;
 
 pub struct InputArg {
     name: String,
-    value: Option<String>,
+    value: Option<Expression>,
 }

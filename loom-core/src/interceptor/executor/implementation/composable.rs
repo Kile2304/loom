@@ -28,6 +28,10 @@ impl ExecutorInterceptor for SequenceChainInterceptor {
     ) -> InterceptorResult {
         InterceptorEngine::execute_chain(context, &self.0).await
     }
+
+    fn need_chain(&self) -> bool {
+        false
+    }
 }
 
 pub struct SequentialExecutorInterceptor(pub Vec<ActiveInterceptor>, pub String);
@@ -63,5 +67,9 @@ impl ExecutorInterceptor for SequentialExecutorInterceptor {
         result.ok_or("The result of a SequentialExecutor should not be None".to_string())
         // context.execution_context.previous_result.take().ok_or("The result of a SequentialExecutor should not be None".to_string())
         // InterceptorEngine::execute_chain(loom_context, context, hook_registry, &self.0)
+    }
+
+    fn need_chain(&self) -> bool {
+        false
     }
 }

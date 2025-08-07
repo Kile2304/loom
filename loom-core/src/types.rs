@@ -22,6 +22,63 @@ impl LoomValue {
     }
 }
 
+impl TryInto<bool> for LoomValue {
+    type Error = String;
+    fn try_into(self) -> Result<bool, Self::Error> {
+        match self {
+            LoomValue::Literal(LiteralValue::Boolean(b)) => Ok(b),
+            other => Err(format!("Cannot convert {:?} to bool", other))
+        }
+    }
+}
+impl TryInto<String> for LoomValue {
+    type Error = String;
+    fn try_into(self) -> Result<String, Self::Error> {
+        match self {
+            LoomValue::Literal(LiteralValue::String(b)) => Ok(b),
+            other => Err(format!("Cannot convert {:?} to String", other))
+        }
+    }
+}
+
+impl TryInto<f64> for LoomValue {
+    type Error = String;
+    fn try_into(self) -> Result<f64, Self::Error> {
+        match self {
+            LoomValue::Literal(LiteralValue::Float(b)) => Ok(b),
+            other => Err(format!("Cannot convert {:?} to float", other))
+        }
+    }
+}
+impl TryInto<i64> for LoomValue {
+    type Error = String;
+    fn try_into(self) -> Result<i64, Self::Error> {
+        match self {
+            LoomValue::Literal(LiteralValue::Number(b)) => Ok(b),
+            other => Err(format!("Cannot convert {:?} to integer", other))
+        }
+    }
+}
+impl TryInto<Vec<LiteralValue>> for LoomValue {
+    type Error = String;
+    fn try_into(self) -> Result<Vec<LiteralValue>, Self::Error> {
+        match self {
+            LoomValue::Literal(LiteralValue::Array(b)) => Ok(b),
+            other => Err(format!("Cannot convert {:?} to Array", other))
+        }
+    }
+}
+impl TryInto<Value> for LoomValue {
+    type Error = String;
+    fn try_into(self) -> Result<Value, Self::Error> {
+        match self {
+            LoomValue::Literal(LiteralValue::Json(b)) => Ok(b),
+            other => Err(format!("Cannot convert {:?} to Json", other))
+        }
+    }
+}
+
+
 /// Types of executable definitions
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DefinitionKind {
@@ -29,7 +86,6 @@ pub enum DefinitionKind {
     Job,
     Pipeline,
     Schedule,
-    Plugin,
 }
 
 /// Enum definition
@@ -95,7 +151,7 @@ impl Signature {
         &self,
         loom_context: &LoomContext,
         context: &ExecutionContext,
-        args: Vec<InputArg>,
+        args: &Vec<InputArg>,
     ) -> Result<Vec<(String, LoomValue)>, String> {
         args.iter()
             .map(|arg|
@@ -109,6 +165,24 @@ impl Signature {
         .collect::<Result<Vec<_>, _>>()
     }
 
+    pub fn positional_arg_from_expression(
+        &self, mut args: Vec<Expression>
+    ) -> Result<Vec<InputArg>, String> {
+        let args_len = args.len();
+        if args_len > self.parameters.len() {
+            return Err(format!("La definition '{}' ha {} parametri e non {}", self.name, self.parameters.len(), args_len));
+        }
+        Ok(
+            self.parameters.iter().enumerate()
+                .take_while(|(index, _)| *index < args_len)
+                .map(|(index, it)| InputArg {
+                    name: it.name.to_string(),
+                    value: Some(args.remove(0)),
+                })
+                .collect::<Vec<_>>()
+        )
+    }
+
 }
 
 impl ParameterDefinition {
@@ -116,7 +190,7 @@ impl ParameterDefinition {
     // TODO: Potrebbe essere il caso di convertire queste stringhe in costanti!
     pub fn value_from_arg(
         &self,
-        value: Option<&String>,
+        value: Option<&Expression>,
         loom_context: &LoomContext,
         context: &ExecutionContext,
     ) -> Result<LoomValue, String> {
@@ -127,44 +201,47 @@ impl ParameterDefinition {
                         LoomValue::Literal(
                             match param_type.as_str() {
                                 "bool" => {
-                                    match value.to_lowercase().as_str() {
-                                        "false" => Ok(LiteralValue::Boolean(false)),
-                                        "true" => Ok(LiteralValue::Boolean(true)),
-                                        other => Err(format!("The parameter '{}' is expected as a boolean, but, '{}' is not a boolean", self.name, other)),
-                                    }?
+                                    value.evaluate(loom_context, context)
+                                        .and_then(|it|
+                                          TryInto::<bool>::try_into(it)
+                                              .map(LiteralValue::Boolean)
+                                        )?
                                 }
                                 "number" => {
-                                    value.parse::<i64>()
-                                        .map(|it| LiteralValue::Number(it))
-                                        .map_err(|_|
-                                            format!(
-                                                "Il parametro '{}' è tipizzato come numero ma '{}' non è un numero valido"
-                                                , self.name, value
-                                            )
+                                    value.evaluate(loom_context, context)
+                                        .and_then(|it|
+                                            TryInto::<i64>::try_into(it)
+                                                .map(LiteralValue::Number)
                                         )?
                                 }
                                 "float" => {
-                                    value.parse::<f64>()
-                                        .map(|it| LiteralValue::Float(it))
-                                        .map_err(|_|
-                                            format!(
-                                                "Il parametro '{}' è tipizzato come float ma '{}' non è un float valido"
-                                                , self.name, value
-                                            )
+                                    value.evaluate(loom_context, context)
+                                        .and_then(|it|
+                                            TryInto::<f64>::try_into(it)
+                                                .map(LiteralValue::Float)
                                         )?
                                 }
                                 "string" => {
-                                    LiteralValue::String(value.to_string())
+                                    value.evaluate(loom_context, context)
+                                        .and_then(|it|
+                                            TryInto::<String>::try_into(it)
+                                                .map(LiteralValue::String)
+                                        )?
                                 }
                                 // Enumerator type
                                 other => {
                                     let en = loom_context.find_enum(other).unwrap();
-                                    en.variants.get(value)
+                                    let str =
+                                        value.evaluate(loom_context, context)
+                                            .and_then(|it|
+                                                TryInto::<String>::try_into(it)
+                                            )?;
+                                    en.variants.get(&str)
                                         .map(|it| LiteralValue::String(it.to_string()))
                                     .ok_or_else(||
                                         format!(
                                             "Il parametro '{}' è tipizzato come enum e '{}' non è uno dei valori attesi.\nValori attesi: {:?}"
-                                            , self.name, value, en.variants.keys()
+                                            , self.name, str, en.variants.keys()
                                         )
                                     )?
                                 }
@@ -172,7 +249,7 @@ impl ParameterDefinition {
                         )
                     )
                 } else {
-                    Ok(LoomValue::Literal(LiteralValue::String(value.to_string())))
+                    Ok(LoomValue::Literal(LiteralValue::String(value.evaluate(loom_context, context)?.stringify(loom_context, context)?)))
                 }
             }
             None => {
@@ -336,6 +413,18 @@ pub enum LiteralValue {
     Boolean(bool),
     Array(Vec<LiteralValue>),
     Json(Value),
+}
+
+impl LoomValue {
+    pub fn stringify(&self, loom_context: &LoomContext, context: &ExecutionContext) -> Result<String, String> {
+        match self {
+            LoomValue::Literal(literal) => Ok(literal.stringify()),
+            LoomValue::Expression(expr) =>
+                expr.evaluate(loom_context, context)
+                    .and_then(|val| val.stringify(loom_context, context)),
+            LoomValue::Empty => Ok("".to_string()),
+        }
+    }
 }
 
 impl LiteralValue {

@@ -29,4 +29,6 @@ pub trait DirectiveInterceptor: Send + Sync {
 
     fn priority(&self) -> i32 { 100 }
 
+    fn need_chain(&self) -> bool;
+
 }

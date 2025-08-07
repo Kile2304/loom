@@ -24,4 +24,7 @@ impl DirectiveInterceptor for IfElseDirectiveInterceptor {
     fn parse_parameters(&self, _loom_context: &LoomContext, _execution_context: &ExecutionContext, _call: &DirectiveCall) -> Result<HashMap<String, LoomValue>, String> {
         todo!()
     }
+    fn need_chain(&self) -> bool {
+        false
+    }
 }

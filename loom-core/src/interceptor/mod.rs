@@ -62,6 +62,14 @@ impl ActiveInterceptor {
         }
     }
 
+    pub fn need_chain(&self) -> bool {
+        match self {
+            Self::Global(g) => g.interceptor.need_chain(),
+            Self::Directive(d) => d.interceptor.need_chain(),
+            Self::Executor(e) => e.interceptor.need_chain(),
+        }
+    }
+
     pub fn sort(a: &ActiveInterceptor, b: &ActiveInterceptor) -> std::cmp::Ordering {
         b.priority().cmp(&a.priority())
     }
