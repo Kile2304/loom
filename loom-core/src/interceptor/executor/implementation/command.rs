@@ -57,8 +57,11 @@ impl CommandExecutorInterceptor {
         let command =
             self.0.iter()
                 .map(|it|
-                    it.evaluate(context.loom_context, context.execution_context.read().map_err(|_| LoomError::execution("Error while trying to read"))?.deref())
-                        .map(|it|
+                    it.evaluate(
+                        context.loom_context,
+                        context.execution_context.read().map_err(|_| LoomError::execution("Error while trying to read"))?.deref(),
+                        None
+                    ).map(|it|
                             match it {
                                 LoomValue::Literal(lit) => lit.stringify(),
                                 _ => panic!("Unexpected")

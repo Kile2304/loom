@@ -202,28 +202,28 @@ impl ParameterDefinition {
                         LoomValue::Literal(
                             match param_type.as_str() {
                                 "bool" => {
-                                    value.evaluate(loom_context, context)
+                                    value.evaluate(loom_context, context, None)
                                         .and_then(|it|
                                           TryInto::<bool>::try_into(it)
                                               .map(LiteralValue::Boolean)
                                         )?
                                 }
                                 "number" => {
-                                    value.evaluate(loom_context, context)
+                                    value.evaluate(loom_context, context, None)
                                         .and_then(|it|
                                             TryInto::<i64>::try_into(it)
                                                 .map(LiteralValue::Number)
                                         )?
                                 }
                                 "float" => {
-                                    value.evaluate(loom_context, context)
+                                    value.evaluate(loom_context, context, None)
                                         .and_then(|it|
                                             TryInto::<f64>::try_into(it)
                                                 .map(LiteralValue::Float)
                                         )?
                                 }
                                 "string" => {
-                                    value.evaluate(loom_context, context)
+                                    value.evaluate(loom_context, context, None)
                                         .and_then(|it|
                                             TryInto::<String>::try_into(it)
                                                 .map(LiteralValue::String)
@@ -233,7 +233,7 @@ impl ParameterDefinition {
                                 other => {
                                     let en = loom_context.find_enum(other).unwrap();
                                     let str =
-                                        value.evaluate(loom_context, context)
+                                        value.evaluate(loom_context, context, None)
                                             .and_then(|it|
                                                 TryInto::<String>::try_into(it)
                                             )?;
@@ -250,7 +250,7 @@ impl ParameterDefinition {
                         )
                     )
                 } else {
-                    value.evaluate(loom_context, context)
+                    value.evaluate(loom_context, context, None)
                         .and_then(|val| {
                             val.stringify(loom_context, context)
                                 .map(|s| LoomValue::Literal(LiteralValue::String(s)))
@@ -267,7 +267,7 @@ impl ParameterDefinition {
                             self.default_value
                                 .as_ref()
                             .ok_or_else(|| LoomError::execution(format!("No default value for parameter {} and no value provided", self.name)))?
-                                .evaluate(loom_context, context)
+                                .evaluate(loom_context, context, None)
                         }
                     }
                 }
@@ -287,7 +287,7 @@ impl ParameterDefinition {
         let value = match &self.default_value {
             Some(expr) => {
                 // Try to evaluate the expression
-                match expr.evaluate(loom_context, context) {
+                match expr.evaluate(loom_context, context, None) {
                     Ok(loom_value) => Some(loom_value),
                     Err(_) => {
                         // Log the error if needed, but return None
@@ -323,7 +323,7 @@ impl ParameterDefinition {
         // Evaluate all arguments first
         let mut evaluated_args = Vec::new();
         for arg in args {
-            evaluated_args.push(arg.evaluate(loom_context, context)?);
+            evaluated_args.push(arg.evaluate(loom_context, context, None)?);
         }
 
         // TODO: Prendere da modulo esterno...
@@ -425,7 +425,7 @@ impl LoomValue {
         match self {
             LoomValue::Literal(literal) => Ok(literal.stringify()),
             LoomValue::Expression(expr) =>
-                expr.evaluate(loom_context, context)
+                expr.evaluate(loom_context, context, None)
                     .and_then(|val| val.stringify(loom_context, context)),
             LoomValue::Empty => Ok("".to_string()),
         }

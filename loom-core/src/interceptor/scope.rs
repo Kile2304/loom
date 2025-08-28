@@ -177,7 +177,7 @@ impl ExecutionActivity {
                                     let name = 
                                         parts.into_iter()
                                             .map(|it|
-                                                it.evaluate(loom_context, context)
+                                                it.evaluate(loom_context, context, None)
                                                     .and_then(|it| 
                                                         it.stringify(loom_context, context)
                                                     )

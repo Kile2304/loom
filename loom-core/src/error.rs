@@ -73,7 +73,59 @@ pub enum LoomError {
     InterceptorError {
         error: InterceptorError,
         interceptor_stack: Vec<String>,
-    }
+    },
+
+    /// Errori di conversione tra tipi
+    ConversionError {
+        from_type: String,
+        to_type: String,
+        value: String,
+        position: Option<Position>,
+    },
+
+    /// Errori di lock/concorrenza
+    ConcurrencyError {
+        resource: String,
+        operation: String,
+        message: String,
+    },
+
+    /// Errori di valutazione di espressioni
+    ExpressionError {
+        expression_type: String,
+        message: String,
+        position: Position,
+    },
+
+    /// Errori di funzioni non implementate
+    NotImplementedError {
+        feature: String,
+        context: String,
+        position: Option<Position>,
+    },
+
+    /// Errori di definizione non trovata
+    DefinitionNotFoundError {
+        name: String,
+        available_definitions: Vec<String>,
+        position: Position,
+    },
+
+    /// Errori di parameter mismatch
+    ParameterError {
+        definition_name: String,
+        expected_count: usize,
+        provided_count: usize,
+        parameter_name: Option<String>,
+        position: Option<Position>,
+    },
+
+    /// Errori di chain interceptor
+    InterceptorChainError {
+        interceptor_name: String,
+        chain_position: usize,
+        cause: Box<LoomError>,
+    },
     
 }
 
@@ -146,12 +198,6 @@ pub enum UndefinedKind {
 
 /// Result type alias for Loom operations
 pub type LoomResult<T> = Result<T, LoomError>;
-
-/// Multiple errors collected during validation
-#[derive(Debug, Clone)]
-pub struct ValidationErrors {
-    pub errors: Vec<LoomError>,
-}
 
 impl LoomError {
     /// Create a parse error
@@ -374,6 +420,114 @@ impl LoomError {
         }
     }
 
+    /// Create a conversion error
+    pub fn conversion(
+        from_type: impl Into<String>,
+        to_type: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        Self::ConversionError {
+            from_type: from_type.into(),
+            to_type: to_type.into(),
+            value: value.into(),
+            position: None,
+        }
+    }
+
+    /// Create a conversion error with position
+    pub fn conversion_at(
+        from_type: impl Into<String>,
+        to_type: impl Into<String>,
+        value: impl Into<String>,
+        position: Position,
+    ) -> Self {
+        Self::ConversionError {
+            from_type: from_type.into(),
+            to_type: to_type.into(),
+            value: value.into(),
+            position: Some(position),
+        }
+    }
+
+    /// Create a concurrency error
+    pub fn concurrency(
+        resource: impl Into<String>,
+        operation: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::ConcurrencyError {
+            resource: resource.into(),
+            operation: operation.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Create an expression error
+    pub fn expression(
+        expression_type: impl Into<String>,
+        message: impl Into<String>,
+        position: Position,
+    ) -> Self {
+        Self::ExpressionError {
+            expression_type: expression_type.into(),
+            message: message.into(),
+            position,
+        }
+    }
+
+    /// Create a not implemented error
+    pub fn not_implemented(
+        feature: impl Into<String>,
+        context: impl Into<String>,
+    ) -> Self {
+        Self::NotImplementedError {
+            feature: feature.into(),
+            context: context.into(),
+            position: None,
+        }
+    }
+
+    /// Create a definition not found error
+    pub fn definition_not_found(
+        name: impl Into<String>,
+        available: Vec<String>,
+        position: Position,
+    ) -> Self {
+        Self::DefinitionNotFoundError {
+            name: name.into(),
+            available_definitions: available,
+            position,
+        }
+    }
+
+    /// Create a parameter error
+    pub fn parameter_mismatch(
+        definition_name: impl Into<String>,
+        expected: usize,
+        provided: usize,
+    ) -> Self {
+        Self::ParameterError {
+            definition_name: definition_name.into(),
+            expected_count: expected,
+            provided_count: provided,
+            parameter_name: None,
+            position: None,
+        }
+    }
+
+    /// Create an interceptor chain error
+    pub fn interceptor_chain(
+        interceptor_name: impl Into<String>,
+        chain_position: usize,
+        cause: LoomError,
+    ) -> Self {
+        Self::InterceptorChainError {
+            interceptor_name: interceptor_name.into(),
+            chain_position,
+            cause: Box::new(cause),
+        }
+    }
+
     /// Get the error position if available
     pub fn position(&self) -> Option<&Position> {
         match self {
@@ -390,17 +544,7 @@ impl LoomError {
     /// Get error severity level
     pub fn severity(&self) -> ErrorSeverity {
         match self {
-            Self::ParseError { .. } => ErrorSeverity::Error,
-            Self::ValidationError { .. } => ErrorSeverity::Error,
-            Self::ExecutionError { .. } => ErrorSeverity::Error,
-            Self::ImportError { .. } => ErrorSeverity::Error,
-            Self::TypeError { .. } => ErrorSeverity::Error,
-            Self::UndefinedError { .. } => ErrorSeverity::Error,
-            Self::IoError { .. } => ErrorSeverity::Error,
-            Self::ConfigError { .. } => ErrorSeverity::Warning,
-            Self::PluginError { .. } => ErrorSeverity::Warning,
-            Self::SystemError { .. } => ErrorSeverity::Error,
-            Self::InterceptorError { .. } => ErrorSeverity::Error,
+            _ => ErrorSeverity::Error
         }
     }
 
@@ -482,6 +626,51 @@ impl fmt::Display for LoomError {
                 } else {
                     write!(f, "System error: {}", message)
                 }
+            }
+            Self::ConversionError { from_type, to_type, value, position } => {
+                if let Some(pos) = position {
+                    write!(f, "Conversion error at {}:{}: cannot convert '{}' from {} to {}",
+                           pos.line, pos.column, value, from_type, to_type)
+                } else {
+                    write!(f, "Conversion error: cannot convert '{}' from {} to {}",
+                           value, from_type, to_type)
+                }
+            }
+            Self::ConcurrencyError { resource, operation, message } => {
+                write!(f, "Concurrency error on resource '{}' during '{}': {}",
+                       resource, operation, message)
+            }
+            Self::ExpressionError { expression_type, message, position } => {
+                write!(f, "Expression error in {} at {}:{}: {}",
+                       expression_type, position.line, position.column, message)
+            }
+            Self::NotImplementedError { feature, context, position } => {
+                if let Some(pos) = position {
+                    write!(f, "Feature '{}' not implemented in context '{}' at {}:{}",
+                           feature, context, pos.line, pos.column)
+                } else {
+                    write!(f, "Feature '{}' not implemented in context '{}'",
+                           feature, context)
+                }
+            }
+            Self::DefinitionNotFoundError { name, available_definitions, position } => {
+                write!(f, "Definition '{}' not found at {}:{}. Available definitions: [{}]",
+                       name, position.line, position.column,
+                       available_definitions.join(", "))
+            }
+            Self::ParameterError { definition_name, expected_count, provided_count, parameter_name, position } => {
+                let pos_str = position.as_ref().map(|p| format!(" at {}:{}", p.line, p.column)).unwrap_or_default();
+                if let Some(param) = parameter_name {
+                    write!(f, "Parameter error in '{}'{}: invalid parameter '{}'",
+                           definition_name, pos_str, param)
+                } else {
+                    write!(f, "Parameter error in '{}'{}: expected {} parameters, got {}",
+                           definition_name, pos_str, expected_count, provided_count)
+                }
+            }
+            Self::InterceptorChainError { interceptor_name, chain_position, cause } => {
+                write!(f, "Interceptor chain error at position {} in '{}': {}",
+                       chain_position, interceptor_name, cause)
             }
             Self::InterceptorError { error, interceptor_stack } => {
                 let stack = 
@@ -597,8 +786,9 @@ impl fmt::Display for LoomError {
                             stack
                         )
                     }
+
                 }
-                
+
             }
         }
     }
@@ -627,50 +817,6 @@ impl std::error::Error for LoomError {
         }
     }
 }
-
-impl ValidationErrors {
-    pub fn new() -> Self {
-        Self {
-            errors: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, error: LoomError) {
-        self.errors.push(error);
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.errors.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.errors.len()
-    }
-
-    pub fn into_result<T>(self, value: T) -> Result<T, Self> {
-        if self.is_empty() {
-            Ok(value)
-        } else {
-            Err(self)
-        }
-    }
-}
-
-impl fmt::Display for ValidationErrors {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.errors.len() == 1 {
-            write!(f, "{}", self.errors[0])
-        } else {
-            write!(f, "Multiple validation errors:")?;
-            for (i, error) in self.errors.iter().enumerate() {
-                write!(f, "\n  {}: {}", i + 1, error)?;
-            }
-            Ok(())
-        }
-    }
-}
-
-impl std::error::Error for ValidationErrors {}
 
 // Conversion from std::io::Error
 impl From<std::io::Error> for LoomError {
