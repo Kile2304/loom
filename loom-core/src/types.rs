@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use serde_json::Value;
 use crate::ast::Expression;
 use crate::context::LoomContext;
+use crate::error::{LoomError, LoomResult};
 use crate::InputArg;
 use crate::interceptor::context::ExecutionContext;
 
@@ -23,57 +24,57 @@ impl LoomValue {
 }
 
 impl TryInto<bool> for LoomValue {
-    type Error = String;
-    fn try_into(self) -> Result<bool, Self::Error> {
+    type Error = LoomError;
+    fn try_into(self) -> LoomResult<bool> {
         match self {
             LoomValue::Literal(LiteralValue::Boolean(b)) => Ok(b),
-            other => Err(format!("Cannot convert {:?} to bool", other))
+            other => Err(LoomError::execution(format!("Cannot convert {:?} to bool", other)))
         }
     }
 }
 impl TryInto<String> for LoomValue {
-    type Error = String;
-    fn try_into(self) -> Result<String, Self::Error> {
+    type Error = LoomError;
+    fn try_into(self) -> LoomResult<String> {
         match self {
             LoomValue::Literal(LiteralValue::String(b)) => Ok(b),
-            other => Err(format!("Cannot convert {:?} to String", other))
+            other => Err(LoomError::execution(format!("Cannot convert {:?} to String", other)))
         }
     }
 }
 
 impl TryInto<f64> for LoomValue {
-    type Error = String;
-    fn try_into(self) -> Result<f64, Self::Error> {
+    type Error = LoomError;
+    fn try_into(self) -> LoomResult<f64> {
         match self {
             LoomValue::Literal(LiteralValue::Float(b)) => Ok(b),
-            other => Err(format!("Cannot convert {:?} to float", other))
+            other => Err(LoomError::execution(format!("Cannot convert {:?} to float", other)))
         }
     }
 }
 impl TryInto<i64> for LoomValue {
-    type Error = String;
-    fn try_into(self) -> Result<i64, Self::Error> {
+    type Error = LoomError;
+    fn try_into(self) -> LoomResult<i64> {
         match self {
             LoomValue::Literal(LiteralValue::Number(b)) => Ok(b),
-            other => Err(format!("Cannot convert {:?} to integer", other))
+            other => Err(LoomError::execution(format!("Cannot convert {:?} to integer", other)))
         }
     }
 }
 impl TryInto<Vec<LiteralValue>> for LoomValue {
-    type Error = String;
-    fn try_into(self) -> Result<Vec<LiteralValue>, Self::Error> {
+    type Error = LoomError;
+    fn try_into(self) -> LoomResult<Vec<LiteralValue>> {
         match self {
             LoomValue::Literal(LiteralValue::Array(b)) => Ok(b),
-            other => Err(format!("Cannot convert {:?} to Array", other))
+            other => Err(LoomError::execution(format!("Cannot convert {:?} to Array", other)))
         }
     }
 }
 impl TryInto<Value> for LoomValue {
-    type Error = String;
-    fn try_into(self) -> Result<Value, Self::Error> {
+    type Error = LoomError;
+    fn try_into(self) -> LoomResult<Value> {
         match self {
             LoomValue::Literal(LiteralValue::Json(b)) => Ok(b),
-            other => Err(format!("Cannot convert {:?} to Json", other))
+            other => Err(LoomError::execution(format!("Cannot convert {:?} to Json", other)))
         }
     }
 }
@@ -152,7 +153,7 @@ impl Signature {
         loom_context: &LoomContext,
         context: &ExecutionContext,
         args: &Vec<InputArg>,
-    ) -> Result<Vec<(String, LoomValue)>, String> {
+    ) -> LoomResult<Vec<(String, LoomValue)>> {
         args.iter()
             .map(|arg|
                  (arg, self.parameters.iter().find(|param| param.name == arg.name))
@@ -167,10 +168,10 @@ impl Signature {
 
     pub fn positional_arg_from_expression(
         &self, mut args: Vec<Expression>
-    ) -> Result<Vec<InputArg>, String> {
+    ) -> LoomResult<Vec<InputArg>> {
         let args_len = args.len();
         if args_len > self.parameters.len() {
-            return Err(format!("La definition '{}' ha {} parametri e non {}", self.name, self.parameters.len(), args_len));
+            return Err(LoomError::execution(format!("La definition '{}' ha {} parametri e non {}", self.name, self.parameters.len(), args_len)));
         }
         Ok(
             self.parameters.iter().enumerate()
@@ -193,7 +194,7 @@ impl ParameterDefinition {
         value: Option<&Expression>,
         loom_context: &LoomContext,
         context: &ExecutionContext,
-    ) -> Result<LoomValue, String> {
+    ) -> LoomResult<LoomValue> {
         match value {
             Some(value) => {
                 if let Some(param_type) = &self.param_type {
@@ -239,17 +240,21 @@ impl ParameterDefinition {
                                     en.variants.get(&str)
                                         .map(|it| LiteralValue::String(it.to_string()))
                                     .ok_or_else(||
-                                        format!(
+                                        LoomError::execution(format!(
                                             "Il parametro '{}' è tipizzato come enum e '{}' non è uno dei valori attesi.\nValori attesi: {:?}"
                                             , self.name, str, en.variants.keys()
-                                        )
+                                        ))
                                     )?
                                 }
                             }
                         )
                     )
                 } else {
-                    Ok(LoomValue::Literal(LiteralValue::String(value.evaluate(loom_context, context)?.stringify(loom_context, context)?)))
+                    value.evaluate(loom_context, context)
+                        .and_then(|val| {
+                            val.stringify(loom_context, context)
+                                .map(|s| LoomValue::Literal(LiteralValue::String(s)))
+                        })
                 }
             }
             None => {
@@ -261,7 +266,7 @@ impl ParameterDefinition {
                         } else {
                             self.default_value
                                 .as_ref()
-                            .ok_or_else(|| format!("No default value for parameter {} and no value provided", self.name))?
+                            .ok_or_else(|| LoomError::execution(format!("No default value for parameter {} and no value provided", self.name)))?
                                 .evaluate(loom_context, context)
                         }
                     }
@@ -314,7 +319,7 @@ impl ParameterDefinition {
         args: &[Expression],
         loom_context: &LoomContext,
         context: &ExecutionContext,
-    ) -> Result<LoomValue, String> {
+    ) -> LoomResult<LoomValue> {
         // Evaluate all arguments first
         let mut evaluated_args = Vec::new();
         for arg in args {
@@ -328,7 +333,7 @@ impl ParameterDefinition {
             "env" => {
                 // Example: env("VAR_NAME") - get environment variable
                 if evaluated_args.len() != 1 {
-                    return Err("env() requires exactly one argument".to_string());
+                    return Err(LoomError::execution("env() requires exactly one argument"));
                 }
                 if let LoomValue::Literal(LiteralValue::String(var_name)) = &evaluated_args[0] {
                     match std::env::var(var_name) {
@@ -336,7 +341,7 @@ impl ParameterDefinition {
                         Err(_) => Ok(LoomValue::Empty),
                     }
                 } else {
-                    Err("env() argument must be a string".to_string())
+                    Err(LoomError::execution("env() argument must be a string"))
                 }
             }
             "concat" => {
@@ -416,7 +421,7 @@ pub enum LiteralValue {
 }
 
 impl LoomValue {
-    pub fn stringify(&self, loom_context: &LoomContext, context: &ExecutionContext) -> Result<String, String> {
+    pub fn stringify(&self, loom_context: &LoomContext, context: &ExecutionContext) -> LoomResult<String> {
         match self {
             LoomValue::Literal(literal) => Ok(literal.stringify()),
             LoomValue::Expression(expr) =>

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use loom_core::ast::DirectiveCall;
 use loom_core::context::LoomContext;
+use loom_core::error::LoomResult;
 use loom_core::interceptor::context::{ExecutionContext, InterceptorContext};
 use loom_core::interceptor::directive::interceptor::DirectiveInterceptor;
 use loom_core::interceptor::hook::registry::HookRegistry;
@@ -21,7 +22,7 @@ impl DirectiveInterceptor for IfElseDirectiveInterceptor {
         todo!()
     }
 
-    fn parse_parameters(&self, _loom_context: &LoomContext, _execution_context: &ExecutionContext, _call: &DirectiveCall) -> Result<HashMap<String, LoomValue>, String> {
+    fn parse_parameters(&self, _loom_context: &LoomContext, _execution_context: &ExecutionContext, _call: &DirectiveCall) -> LoomResult<HashMap<String, LoomValue>> {
         todo!()
     }
     fn need_chain(&self) -> bool {

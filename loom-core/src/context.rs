@@ -1,5 +1,6 @@
 use crate::ast::*;
 use crate::types::*;
+use crate::error::{LoomError, LoomResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -64,7 +65,7 @@ impl LoomContext {
     // 
     //     Ok(())
     // }
-    pub fn call_function(&self, name: &str, args: Vec<LoomValue>) -> Result<LoomValue, String> {
+    pub fn call_function(&self, name: &str, args: Vec<LoomValue>) -> LoomResult<LoomValue> {
         Ok(LoomValue::Empty)
     }
     
@@ -138,7 +139,7 @@ impl LoomContext {
     //     Ok(())
     // }
 
-    fn resolve_import_path(&self, current_file: &PathBuf, import_path: &str) -> Result<PathBuf, String> {
+    fn resolve_import_path(&self, current_file: &PathBuf, import_path: &str) -> LoomResult<PathBuf> {
         // Simple resolution - in practice, this would be more sophisticated
         let current_dir = current_file.parent().unwrap_or(current_file);
         let resolved = current_dir.join(format!("{}.wfc", import_path));
@@ -225,18 +226,18 @@ impl LoomContext {
     //     Ok(())
     // }
 
-    fn validate_definition_references(&self, _name: &str, definition: &Definition, errors: &mut Vec<String>) {
+    fn validate_definition_references(&self, _name: &str, definition: &Definition, errors: &mut Vec<LoomError>) {
         // Validate that all referenced jobs/recipes exist
         self.validate_block_references(&definition.body, errors);
     }
 
-    fn validate_block_references(&self, blocks: &Vec<Block>, errors: &mut Vec<String>) {
+    fn validate_block_references(&self, blocks: &Vec<Block>, errors: &mut Vec<LoomError>) {
         for block in blocks {
             for statement in &block.statements {
                 match statement {
                     Statement::Call { name, .. } => {
                         if !self.definitions_ref.contains_key(name) {
-                            errors.push(format!("Undefined reference: {}", name));
+                            errors.push(LoomError::execution(format!("Undefined reference: {}", name)));
                         }
                     }
                     _ => {}

@@ -2,6 +2,7 @@ use crate::types::*;
 use std::collections::HashMap;
 use crate::context::{LoomContext, Module};
 use crate::definition::ArgDefinition;
+use crate::error::{LoomError, LoomResult};
 use crate::interceptor::context::ExecutionContext;
 
 /// A complete definition (recipe, job, pipeline, etc.)
@@ -39,8 +40,6 @@ pub enum Statement {
         directives: Vec<DirectiveCall>, // Direttive anche sulle singole call
     },
 
-    // /// Expression statement
-    // Expression(Expression),
 }
 
 /// Assignment targets
@@ -153,15 +152,6 @@ pub enum DirectiveArg {
     },
 }
 
-// TODO: Temporaneamente commentato, probabilmente diverrà un interceptor che aggiunge metadati. In futuro vedremo!
-// /// Special directive for scheduling
-// #[derive(Debug, Clone, PartialEq)]
-// pub struct ScheduleDirective {
-//     pub cron: Option<String>,
-//     pub overlap_policy: Option<String>,
-//     pub enabled: bool,
-// }
-
 impl Block {
 
     pub fn new(statements: Vec<Statement>, directives: Vec<DirectiveCall>, label: Vec<Expression>) -> Self {
@@ -181,13 +171,13 @@ impl Expression {
         &self,
         loom_context: &LoomContext,
         context: &ExecutionContext,
-    ) -> Result<LoomValue, String> {
+    ) -> LoomResult<LoomValue> {
         match self {
             Expression::Literal(lit) => Ok(LoomValue::Literal(lit.clone())),
             Expression::Variable(var_name) => {
                 // Look up variable in context
                 context.get_variable(var_name)
-                    .ok_or_else(|| format!("Variable '{}' not found", var_name))
+                    .ok_or_else(|| LoomError::execution(format!("Variable '{}' not found", var_name)))
             }
             Expression::FunctionCall { name, args } => {
                 // self.evaluate_function_call(name, args, loom_context, context)
@@ -198,9 +188,9 @@ impl Expression {
             }
             Expression::EnumAccess { enum_name, variant} => {
                 let en = loom_context.find_enum(enum_name.as_str())
-                    .ok_or_else(|| format!("Enum '{}' not found", enum_name))?;
+                    .ok_or_else(|| LoomError::execution(format!("Enum '{}' not found", enum_name)))?;
                 en.variants.get(variant.as_str()).clone()
-                    .ok_or_else(|| format!("Enum '{}' don't contain variant '{}'", enum_name, variant))
+                    .ok_or_else(|| LoomError::execution(format!("Enum '{}' don't contain variant '{}'", enum_name, variant)))
                     .map(|it| LoomValue::Literal(LiteralValue::String(it.to_string())))
             }
             Expression::Interpolation { parts } => {
@@ -212,19 +202,19 @@ impl Expression {
                                 match e.evaluate(loom_context, context) {
                                     Ok(LoomValue::Literal(lit)) => Ok(lit.stringify()),
                                     Err(err) => Err(err),
-                                    x => Err(format!("Interpolation '{:?}' does not contain a literal value", x)),
+                                    x => Err(LoomError::execution(format!("Interpolation '{:?}' does not contain a literal value", x))),
                                 }
                             },
                         }
                     )
-                .collect::<Result<Vec<_>, _>>()?
+                .collect::<LoomResult<Vec<_>>>()?
                     .join("");
 
                 Ok(LoomValue::Literal(LiteralValue::String(joined)))
             }
-            // TROO: Manca IndexAccess
+            // TODO: Manca IndexAccess
             // Add other expression types as needed
-            _ => Err("Unsupported expression type".to_string()),
+            _ => Err(LoomError::execution("Unsupported expression type")),
         }
     }
 
@@ -235,7 +225,7 @@ impl Expression {
         right: &Expression,
         loom_context: &LoomContext,
         context: &ExecutionContext,
-    ) -> Result<LoomValue, String> {
+    ) -> LoomResult<LoomValue> {
         let left_val = left.evaluate(loom_context, context)?;
         let right_val = right.evaluate(loom_context, context)?;
 
@@ -246,43 +236,43 @@ impl Expression {
                         (LiteralValue::Number(a), LiteralValue::Number(b)) => Ok(LoomValue::Literal(LiteralValue::Number(a + b))),
                         (LiteralValue::Float(a), LiteralValue::Float(b)) => Ok(LoomValue::Literal(LiteralValue::Float(a + b))),
                         (LiteralValue::String(a), LiteralValue::String(b)) => Ok(LoomValue::Literal(LiteralValue::String(format!("{a}{b}")))),
-                        _ => Err("Invalid operands for +".to_string()),
+                        _ => Err(LoomError::execution("Invalid operands for +")),
                     },
                     BinaryOperator::Subtract => match (left_val, right_val) {
                         (LiteralValue::Number(a), LiteralValue::Number(b)) => Ok(LoomValue::Literal(LiteralValue::Number(a - b))),
                         (LiteralValue::Float(a), LiteralValue::Float(b)) => Ok(LoomValue::Literal(LiteralValue::Float(a - b))),
-                        _ => Err("Invalid operands for -".to_string()),
+                        _ => Err(LoomError::execution("Invalid operands for -")),
                     },
                     BinaryOperator::Multiply => match (left_val, right_val) {
                         (LiteralValue::Number(a), LiteralValue::Number(b)) => Ok(LoomValue::Literal(LiteralValue::Number(a * b))),
                         (LiteralValue::Float(a), LiteralValue::Float(b)) => Ok(LoomValue::Literal(LiteralValue::Float(a * b))),
-                        _ => Err("Invalid operands for *".to_string()),
+                        _ => Err(LoomError::execution("Invalid operands for *")),
                     },
                     BinaryOperator::Divide => match (left_val, right_val) {
                         (LiteralValue::Number(a), LiteralValue::Number(b)) => {
                             if *b == 0 {
-                                Err("Division by zero".to_string())
+                                Err(LoomError::execution("Division by zero"))
                             } else {
                                 Ok(LoomValue::Literal(LiteralValue::Number(a / b)))
                             }
                         },
                         (LiteralValue::Float(a), LiteralValue::Float(b)) => {
                             if *b == 0.0 {
-                                Err("Division by zero".to_string())
+                                Err(LoomError::execution("Division by zero"))
                             } else {
                                 Ok(LoomValue::Literal(LiteralValue::Float(a / b)))
                             }
                         },
-                        _ => Err("Invalid operands for /".to_string()),
+                        _ => Err(LoomError::execution("Invalid operands for /")),
                     },
                     BinaryOperator::Equal => Ok(LoomValue::Literal(LiteralValue::Boolean(left_val == right_val))),
                     BinaryOperator::NotEqual => Ok(LoomValue::Literal(LiteralValue::Boolean(left_val != right_val))),
                     // Add more operators as needed
-                    _ => Err(format!("Unknown operator '{:?}'", operator)),
+                    _ => Err(LoomError::execution(format!("Unknown operator '{:?}'", operator))),
                 }
             }
             _ => {
-                Err(format!("Uno tra {:?} e {:?} non è un Literal", left_val, right_val))
+                Err(LoomError::execution(format!("Uno tra {:?} e {:?} non è un Literal", left_val, right_val)))
             }
         }
     }

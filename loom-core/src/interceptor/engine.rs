@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::ast::Statement;
 use crate::context::LoomContext;
+use crate::error::{LoomError, LoomResult};
 use crate::event::channel::ExecutionEventChannel;
 use crate::InputArg;
 use crate::interceptor::{ActiveInterceptor, InterceptorChain, InterceptorResult};
@@ -23,6 +24,7 @@ use crate::interceptor::hook::registry::HookRegistry;
 use crate::interceptor::result::ExecutionResult;
 use crate::interceptor::scope::{ExecutionActivity, ExecutionScope};
 use crate::types::ParallelizationKind;
+use crate::loom_error;
 
 // TODO: Attivare il registering e unregistering degli interceptor a runtime, per farlo probabilmente, dovrò aggiungere dei riferimenti al plugin.
 // TODO: Ovviamente questa cosa potrà essere fatta solo se non c'è nulla in esecuzione, altrimenti, bisognerà aggiungerlo in pending,
@@ -52,22 +54,22 @@ impl InterceptorEngine {
     }
 
     /// Registra interceptor globale
-    pub fn register_global(&mut self, interceptor: Arc<dyn GlobalInterceptor>) -> Result<(), String> {
+    pub fn register_global(&mut self, interceptor: Arc<dyn GlobalInterceptor>) -> LoomResult<()> {
         self.global_manager.register(interceptor)
     }
 
     /// Registra interceptor di direttiva
-    pub fn register_directive(&mut self, interceptor: Arc<dyn DirectiveInterceptor>) -> Result<(), String> {
+    pub fn register_directive(&mut self, interceptor: Arc<dyn DirectiveInterceptor>) -> LoomResult<()> {
         self.directive_manager.register(interceptor)
     }
 
     /// Configura interceptor globale
-    pub fn configure_global(&mut self, name: &str, config: GlobalInterceptorConfig) -> Result<(), String> {
+    pub fn configure_global(&mut self, name: &str, config: GlobalInterceptorConfig) -> LoomResult<()> {
         self.global_manager.configure(name, config)
     }
 
     /// Override temporaneo
-    pub fn override_global(&mut self, name: &str, enabled: bool) -> Result<(), String> {
+    pub fn override_global(&mut self, name: &str, enabled: bool) -> LoomResult<()> {
         self.global_manager.set_user_override(name, enabled)
     }
 
@@ -80,15 +82,15 @@ impl InterceptorEngine {
         // Definition Name
         def_name: String,
         input_args: Vec<InputArg>,
-    ) -> Result<ExecutionResult, String> {
+    ) -> InterceptorResult {
         // Dovrebbero essere fatti controlli a monte, quindi, dovrei SEMPRE trovare la definition
         let definition_target =
             loom_context.find_definition(&def_name)
-                .ok_or(format!("Cannot find the definition: '{def_name}'"))?;
+                .ok_or_else(|| LoomError::execution(format!("Cannot find the definition: '{def_name}'")))?;
 
         let scope = ExecutionScope::from(definition_target);
 
-        let mut context = ExecutionContext {
+        let context = ExecutionContext {
             variables: loom_context.get_variables(&def_name).unwrap().clone(),
             env_vars: std::env::vars().collect(),
             working_dir: std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
@@ -98,12 +100,6 @@ impl InterceptorEngine {
             scope: scope,
         };
         let target = ExecutionActivity::from(definition_target);
-
-        // definition_target.signature.args_into_variable(loom_context, &context, input_args)?.into_iter()
-        //     .for_each(|(variable_name, value)| {
-        //         context.variables.to_mut().insert(variable_name, value);
-        //         // context.variables.insert(variable_name, value);
-        //     });
 
         let interceptor_chain =
             self.build_target_chain(
@@ -134,7 +130,7 @@ impl InterceptorEngine {
         execution_target: ExecutionActivity,
         global_interceptor: &Vec<ActiveGlobalInterceptor>,
         args: Option<Vec<InputArg>>,
-    ) -> Result<Vec<ActiveInterceptor>, String> {
+    ) -> LoomResult<Vec<ActiveInterceptor>> {
         match &execution_target {
             ExecutionActivity::Command(command) => {
                 match command {
@@ -153,7 +149,7 @@ impl InterceptorEngine {
                     }
                     Statement::Call { name, args, .. } => {
                         let definition_to_call = loom_context.find_definition(name)
-                            .ok_or_else(|| format!("Si ha provato a chiamare una Definition non esistente '{name}'"))?;
+                            .ok_or_else(|| LoomError::execution(format!("Si ha provato a chiamare una Definition non esistente '{name}'")))?;
                         let activity = ExecutionActivity::from(definition_to_call);
                         self.build_target_chain(
                             loom_context,
@@ -221,7 +217,7 @@ impl InterceptorEngine {
         execution_target: &ExecutionActivity,
         global_interceptor: &Vec<ActiveGlobalInterceptor>,
         name: &str,
-    ) -> Result<Vec<ActiveInterceptor>, String> {
+    ) -> LoomResult<Vec<ActiveInterceptor>> {
         execution_target.build_child(loom_context, context)?.into_iter()
             .map(|it|
                 self.build_target_chain(loom_context, context, it, global_interceptor, None)
@@ -272,7 +268,7 @@ impl InterceptorEngine {
         chain: &'a [ActiveInterceptor],
     ) -> InterceptorResult {
         let mut index = 0;
-        let mut result: InterceptorResult = Err("Nothing Executed!".to_string());
+        let mut result: InterceptorResult = Err(LoomError::execution("Nothing Executed!"));
         while index < chain.len() {
             if chain[index].need_chain() {
                 result = Self::execute_chain_recursive(context.clone(), chain, index).await;

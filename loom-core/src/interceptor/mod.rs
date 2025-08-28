@@ -1,6 +1,7 @@
 use std::pin::Pin;
 use std::sync::Arc;
 use crate::context::LoomContext;
+use crate::error::LoomResult;
 use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::directive::ActiveDirectiveInterceptor;
 use crate::interceptor::directive::interceptor::DirectiveInterceptor;
@@ -26,7 +27,7 @@ pub mod priority;
 pub type InterceptorChain<'a> = dyn FnOnce(InterceptorContext<'a>)
     -> Pin<Box<dyn Future<Output = InterceptorResult> + Send + 'a>> + Send + 'a;
 
-pub type InterceptorResult = Result<ExecutionResult, String>;
+pub type InterceptorResult = LoomResult<ExecutionResult>;
 
 
 /// Enum unificato per l'execution chain
@@ -78,11 +79,11 @@ impl ActiveInterceptor {
 #[macro_export]
 macro_rules! interceptor_result {
     ($expr:expr) => {
-        Box::pin(std::future::ready($expr)) as std::pin::Pin<Box<dyn Future<Output = Result<$crate::interceptor::result::ExecutionResult, String>> + Send>>
+        Box::pin(std::future::ready($expr)) as std::pin::Pin<Box<dyn Future<Output = $crate::error::LoomResult<$crate::interceptor::result::ExecutionResult>> + Send>>
     };
 
     // Con lifetime
     ($expr:expr, $lifetime:lifetime) => {
-        Box::pin(std::future::ready($expr)) as std::pin::Pin<Box<dyn Future<Output = Result<$crate::interceptor::result::ExecutionResult, String>> + Send + $lifetime>>
+        Box::pin(std::future::ready($expr)) as std::pin::Pin<Box<dyn Future<Output = $crate::error::LoomResult<$crate::interceptor::result::ExecutionResult>> + Send + $lifetime>>
     };
 }
