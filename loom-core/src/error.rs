@@ -1,5 +1,6 @@
 use crate::types::Position;
 use std::fmt;
+use crate::interceptor::scope::ExecutionScope;
 
 /// Main error type for Loom operations
 #[derive(Debug, Clone)]
@@ -68,6 +69,118 @@ pub enum LoomError {
         exit_code: Option<i32>,
         command: Option<String>,
     },
+    
+    InterceptorError {
+        error: InterceptorError,
+        interceptor_stack: Vec<String>,
+    },
+
+    /// Errori di conversione tra tipi
+    ConversionError {
+        from_type: String,
+        to_type: String,
+        value: String,
+        position: Option<Position>,
+    },
+
+    /// Errori di lock/concorrenza
+    ConcurrencyError {
+        resource: String,
+        operation: String,
+        message: String,
+    },
+
+    /// Errori di valutazione di espressioni
+    ExpressionError {
+        expression_type: String,
+        message: String,
+        position: Position,
+    },
+
+    /// Errori di funzioni non implementate
+    NotImplementedError {
+        feature: String,
+        context: String,
+        position: Option<Position>,
+    },
+
+    /// Errori di definizione non trovata
+    DefinitionNotFoundError {
+        name: String,
+        available_definitions: Vec<String>,
+        position: Position,
+    },
+
+    /// Errori di parameter mismatch
+    ParameterError {
+        definition_name: String,
+        expected_count: usize,
+        provided_count: usize,
+        parameter_name: Option<String>,
+        position: Option<Position>,
+    },
+
+    /// Errori di chain interceptor
+    InterceptorChainError {
+        interceptor_name: String,
+        chain_position: usize,
+        cause: Box<LoomError>,
+    },
+    
+}
+
+#[derive(Debug, Clone)]
+pub enum InterceptorError {
+    // Directive interceptor errors
+    Directive {
+        name: String,
+        message: String,
+    },
+    // Global interceptor errors
+    Global {
+        name: String,
+        message: String,
+    },
+    // Execution interceptor errors with scope
+    Execution {
+        scope: ExecutionScope,
+        message: String,
+    },
+    // Command execution errors
+    CommandExecution {
+        command: String,
+        message: String,
+        exit_code: Option<i32>,
+    },
+    // Definition resolution errors
+    DefinitionResolution {
+        name: String,
+        message: String,
+    },
+    // Parameter validation errors
+    ParameterValidation {
+        name: String,
+        message: String,
+    },
+    // Chain execution errors
+    ChainExecution {
+        message: String,
+    },
+    // Context access errors
+    ContextAccess {
+        message: String,
+    },
+    // Pipeline execution errors
+    PipelineExecution {
+        name: String,
+        stage: Option<String>,
+        message: String,
+    },
+    // Job execution errors
+    JobExecution {
+        name: String,
+        message: String,
+    }
 }
 
 /// Types of undefined references
@@ -85,12 +198,6 @@ pub enum UndefinedKind {
 
 /// Result type alias for Loom operations
 pub type LoomResult<T> = Result<T, LoomError>;
-
-/// Multiple errors collected during validation
-#[derive(Debug, Clone)]
-pub struct ValidationErrors {
-    pub errors: Vec<LoomError>,
-}
 
 impl LoomError {
     /// Create a parse error
@@ -190,6 +297,236 @@ impl LoomError {
             command: Some(command.into()),
         }
     }
+    
+    /// Create an interceptor error with directive scope
+    pub fn directive_interceptor(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::Directive {
+                name: name.into(),
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error with global scope
+    pub fn global_interceptor(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::Global {
+                name: name.into(),
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error with execution scope
+    pub fn execution_interceptor(scope: ExecutionScope, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::Execution {
+                scope,
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for command execution
+    pub fn command_execution(command: impl Into<String>, message: impl Into<String>, exit_code: Option<i32>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::CommandExecution {
+                command: command.into(),
+                message: message.into(),
+                exit_code,
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for definition resolution
+    pub fn definition_resolution(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::DefinitionResolution {
+                name: name.into(),
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for parameter validation
+    pub fn parameter_validation(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::ParameterValidation {
+                name: name.into(),
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for chain execution
+    pub fn chain_execution(message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::ChainExecution {
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for context access
+    pub fn context_access(message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::ContextAccess {
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for pipeline execution
+    pub fn pipeline_execution(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::PipelineExecution {
+                name: name.into(),
+                stage: None,
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for pipeline execution with stage
+    pub fn pipeline_stage_execution(name: impl Into<String>, stage: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::PipelineExecution {
+                name: name.into(),
+                stage: Some(stage.into()),
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+    
+    /// Create an interceptor error for job execution
+    pub fn job_execution(name: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::InterceptorError {
+            error: InterceptorError::JobExecution {
+                name: name.into(),
+                message: message.into(),
+            },
+            interceptor_stack: Vec::new(),
+        }
+    }
+
+    /// Create a conversion error
+    pub fn conversion(
+        from_type: impl Into<String>,
+        to_type: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
+        Self::ConversionError {
+            from_type: from_type.into(),
+            to_type: to_type.into(),
+            value: value.into(),
+            position: None,
+        }
+    }
+
+    /// Create a conversion error with position
+    pub fn conversion_at(
+        from_type: impl Into<String>,
+        to_type: impl Into<String>,
+        value: impl Into<String>,
+        position: Position,
+    ) -> Self {
+        Self::ConversionError {
+            from_type: from_type.into(),
+            to_type: to_type.into(),
+            value: value.into(),
+            position: Some(position),
+        }
+    }
+
+    /// Create a concurrency error
+    pub fn concurrency(
+        resource: impl Into<String>,
+        operation: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::ConcurrencyError {
+            resource: resource.into(),
+            operation: operation.into(),
+            message: message.into(),
+        }
+    }
+
+    /// Create an expression error
+    pub fn expression(
+        expression_type: impl Into<String>,
+        message: impl Into<String>,
+        position: Position,
+    ) -> Self {
+        Self::ExpressionError {
+            expression_type: expression_type.into(),
+            message: message.into(),
+            position,
+        }
+    }
+
+    /// Create a not implemented error
+    pub fn not_implemented(
+        feature: impl Into<String>,
+        context: impl Into<String>,
+    ) -> Self {
+        Self::NotImplementedError {
+            feature: feature.into(),
+            context: context.into(),
+            position: None,
+        }
+    }
+
+    /// Create a definition not found error
+    pub fn definition_not_found(
+        name: impl Into<String>,
+        available: Vec<String>,
+        position: Position,
+    ) -> Self {
+        Self::DefinitionNotFoundError {
+            name: name.into(),
+            available_definitions: available,
+            position,
+        }
+    }
+
+    /// Create a parameter error
+    pub fn parameter_mismatch(
+        definition_name: impl Into<String>,
+        expected: usize,
+        provided: usize,
+    ) -> Self {
+        Self::ParameterError {
+            definition_name: definition_name.into(),
+            expected_count: expected,
+            provided_count: provided,
+            parameter_name: None,
+            position: None,
+        }
+    }
+
+    /// Create an interceptor chain error
+    pub fn interceptor_chain(
+        interceptor_name: impl Into<String>,
+        chain_position: usize,
+        cause: LoomError,
+    ) -> Self {
+        Self::InterceptorChainError {
+            interceptor_name: interceptor_name.into(),
+            chain_position,
+            cause: Box::new(cause),
+        }
+    }
 
     /// Get the error position if available
     pub fn position(&self) -> Option<&Position> {
@@ -207,16 +544,7 @@ impl LoomError {
     /// Get error severity level
     pub fn severity(&self) -> ErrorSeverity {
         match self {
-            Self::ParseError { .. } => ErrorSeverity::Error,
-            Self::ValidationError { .. } => ErrorSeverity::Error,
-            Self::ExecutionError { .. } => ErrorSeverity::Error,
-            Self::ImportError { .. } => ErrorSeverity::Error,
-            Self::TypeError { .. } => ErrorSeverity::Error,
-            Self::UndefinedError { .. } => ErrorSeverity::Error,
-            Self::IoError { .. } => ErrorSeverity::Error,
-            Self::ConfigError { .. } => ErrorSeverity::Warning,
-            Self::PluginError { .. } => ErrorSeverity::Warning,
-            Self::SystemError { .. } => ErrorSeverity::Error,
+            _ => ErrorSeverity::Error
         }
     }
 
@@ -299,6 +627,169 @@ impl fmt::Display for LoomError {
                     write!(f, "System error: {}", message)
                 }
             }
+            Self::ConversionError { from_type, to_type, value, position } => {
+                if let Some(pos) = position {
+                    write!(f, "Conversion error at {}:{}: cannot convert '{}' from {} to {}",
+                           pos.line, pos.column, value, from_type, to_type)
+                } else {
+                    write!(f, "Conversion error: cannot convert '{}' from {} to {}",
+                           value, from_type, to_type)
+                }
+            }
+            Self::ConcurrencyError { resource, operation, message } => {
+                write!(f, "Concurrency error on resource '{}' during '{}': {}",
+                       resource, operation, message)
+            }
+            Self::ExpressionError { expression_type, message, position } => {
+                write!(f, "Expression error in {} at {}:{}: {}",
+                       expression_type, position.line, position.column, message)
+            }
+            Self::NotImplementedError { feature, context, position } => {
+                if let Some(pos) = position {
+                    write!(f, "Feature '{}' not implemented in context '{}' at {}:{}",
+                           feature, context, pos.line, pos.column)
+                } else {
+                    write!(f, "Feature '{}' not implemented in context '{}'",
+                           feature, context)
+                }
+            }
+            Self::DefinitionNotFoundError { name, available_definitions, position } => {
+                write!(f, "Definition '{}' not found at {}:{}. Available definitions: [{}]",
+                       name, position.line, position.column,
+                       available_definitions.join(", "))
+            }
+            Self::ParameterError { definition_name, expected_count, provided_count, parameter_name, position } => {
+                let pos_str = position.as_ref().map(|p| format!(" at {}:{}", p.line, p.column)).unwrap_or_default();
+                if let Some(param) = parameter_name {
+                    write!(f, "Parameter error in '{}'{}: invalid parameter '{}'",
+                           definition_name, pos_str, param)
+                } else {
+                    write!(f, "Parameter error in '{}'{}: expected {} parameters, got {}",
+                           definition_name, pos_str, expected_count, provided_count)
+                }
+            }
+            Self::InterceptorChainError { interceptor_name, chain_position, cause } => {
+                write!(f, "Interceptor chain error at position {} in '{}': {}",
+                       chain_position, interceptor_name, cause)
+            }
+            Self::InterceptorError { error, interceptor_stack } => {
+                let stack = 
+                    interceptor_stack.join(", ");
+                match error {
+                    InterceptorError::Directive { name, message } => {
+                        write!(
+                            f,
+                            "Interceptor error: While executing the Directive Interceptor '{}' the following error occured '{}'.\nThe following interceptor have been already been executed: [ {} ]",
+                            name,
+                            message,
+                            stack
+                        )
+                    }
+                    InterceptorError::Global { name, message } => {
+                        write!(
+                            f,
+                            "Interceptor error: While executing the Global Interceptor '{}' the following error occured '{}'.\nThe following interceptor have been already been executed: [ {} ]",
+                            name,
+                            message,
+                            stack
+                        )
+                    }
+                    InterceptorError::Execution { scope, message } => {
+                        write!(
+                            f,
+                            "Interceptor error: While executing the Execution Interceptor (scope) '{:?}' the following error occured '{}'.\nThe following interceptor have been already been executed: [ {} ]",
+                            scope,
+                            message,
+                            stack
+                        )
+                    },
+                    InterceptorError::CommandExecution { command, message, exit_code } => {
+                        if let Some(code) = exit_code {
+                            write!(
+                                f,
+                                "Command execution error (exit code {}): '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
+                                code,
+                                command,
+                                message,
+                                stack
+                            )
+                        } else {
+                            write!(
+                                f,
+                                "Command execution error: '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
+                                command,
+                                message,
+                                stack
+                            )
+                        }
+                    },
+                    InterceptorError::DefinitionResolution { name, message } => {
+                        write!(
+                            f,
+                            "Definition resolution error: '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
+                            name,
+                            message,
+                            stack
+                        )
+                    },
+                    InterceptorError::ParameterValidation { name, message } => {
+                        write!(
+                            f,
+                            "Parameter validation error: '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
+                            name,
+                            message,
+                            stack
+                        )
+                    },
+                    InterceptorError::ChainExecution { message } => {
+                        write!(
+                            f,
+                            "Chain execution error: {}.\nThe following interceptor have been already been executed: [ {} ]",
+                            message,
+                            stack
+                        )
+                    },
+                    InterceptorError::ContextAccess { message } => {
+                        write!(
+                            f,
+                            "Context access error: {}.\nThe following interceptor have been already been executed: [ {} ]",
+                            message,
+                            stack
+                        )
+                    },
+                    InterceptorError::PipelineExecution { name, stage, message } => {
+                        if let Some(stage_name) = stage {
+                            write!(
+                                f,
+                                "Pipeline execution error in pipeline '{}' at stage '{}': {}.\nThe following interceptor have been already been executed: [ {} ]",
+                                name,
+                                stage_name,
+                                message,
+                                stack
+                            )
+                        } else {
+                            write!(
+                                f,
+                                "Pipeline execution error in pipeline '{}': {}.\nThe following interceptor have been already been executed: [ {} ]",
+                                name,
+                                message,
+                                stack
+                            )
+                        }
+                    },
+                    InterceptorError::JobExecution { name, message } => {
+                        write!(
+                            f,
+                            "Job execution error in job '{}': {}.\nThe following interceptor have been already been executed: [ {} ]",
+                            name,
+                            message,
+                            stack
+                        )
+                    }
+
+                }
+
+            }
         }
     }
 }
@@ -327,50 +818,6 @@ impl std::error::Error for LoomError {
     }
 }
 
-impl ValidationErrors {
-    pub fn new() -> Self {
-        Self {
-            errors: Vec::new(),
-        }
-    }
-
-    pub fn add(&mut self, error: LoomError) {
-        self.errors.push(error);
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.errors.is_empty()
-    }
-
-    pub fn len(&self) -> usize {
-        self.errors.len()
-    }
-
-    pub fn into_result<T>(self, value: T) -> Result<T, Self> {
-        if self.is_empty() {
-            Ok(value)
-        } else {
-            Err(self)
-        }
-    }
-}
-
-impl fmt::Display for ValidationErrors {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.errors.len() == 1 {
-            write!(f, "{}", self.errors[0])
-        } else {
-            write!(f, "Multiple validation errors:")?;
-            for (i, error) in self.errors.iter().enumerate() {
-                write!(f, "\n  {}: {}", i + 1, error)?;
-            }
-            Ok(())
-        }
-    }
-}
-
-impl std::error::Error for ValidationErrors {}
-
 // Conversion from std::io::Error
 impl From<std::io::Error> for LoomError {
     fn from(error: std::io::Error) -> Self {
@@ -383,4 +830,106 @@ impl From<serde_json::Error> for LoomError {
     fn from(error: serde_json::Error) -> Self {
         Self::validation(format!("JSON error: {}", error))
     }
+}
+
+// Conversion from String
+impl From<String> for LoomError {
+    fn from(error: String) -> Self {
+        Self::execution(error)
+    }
+}
+
+// Conversion from &str
+impl<'a> From<&'a str> for LoomError {
+    fn from(error: &'a str) -> Self {
+        Self::execution(error)
+    }
+}
+
+// Macro to help with string error conversion
+#[macro_export]
+macro_rules! string_to_loom_error {
+    ($result:expr) => {
+        $result.map_err(|e: String| crate::error::LoomError::from(e))
+    };
+}
+
+// Macro for creating execution errors
+#[macro_export]
+macro_rules! loom_error {
+    ($msg:expr) => {
+        Err(crate::error::LoomError::execution($msg))
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        Err(crate::error::LoomError::execution(format!($fmt, $($arg)*)))
+    };
+}
+
+// Macro for creating command execution errors
+#[macro_export]
+macro_rules! command_error {
+    ($cmd:expr, $msg:expr) => {
+        Err(crate::error::LoomError::command_execution($cmd, $msg, None))
+    };
+    ($cmd:expr, $msg:expr, $code:expr) => {
+        Err(crate::error::LoomError::command_execution($cmd, $msg, Some($code)))
+    };
+    ($cmd:expr, $fmt:expr, $($arg:tt)*) => {
+        Err(crate::error::LoomError::command_execution($cmd, format!($fmt, $($arg)*), None))
+    };
+}
+
+// Macro for creating definition resolution errors
+#[macro_export]
+macro_rules! definition_error {
+    ($name:expr, $msg:expr) => {
+        Err(crate::error::LoomError::definition_resolution($name, $msg))
+    };
+    ($name:expr, $fmt:expr, $($arg:tt)*) => {
+        Err(crate::error::LoomError::definition_resolution($name, format!($fmt, $($arg)*)))
+    };
+}
+
+// Macro for creating parameter validation errors
+#[macro_export]
+macro_rules! param_error {
+    ($name:expr, $msg:expr) => {
+        Err(crate::error::LoomError::parameter_validation($name, $msg))
+    };
+    ($name:expr, $fmt:expr, $($arg:tt)*) => {
+        Err(crate::error::LoomError::parameter_validation($name, format!($fmt, $($arg)*)))
+    };
+}
+
+// Macro for creating context access errors
+#[macro_export]
+macro_rules! context_error {
+    ($msg:expr) => {
+        Err(crate::error::LoomError::context_access($msg))
+    };
+    ($fmt:expr, $($arg:tt)*) => {
+        Err(crate::error::LoomError::context_access(format!($fmt, $($arg)*)))
+    };
+}
+
+// Macro for creating pipeline execution errors
+#[macro_export]
+macro_rules! pipeline_error {
+    ($name:expr, $msg:expr) => {
+        Err(crate::error::LoomError::pipeline_execution($name, $msg))
+    };
+    ($name:expr, $fmt:expr, $($arg:tt)*) => {
+        Err(crate::error::LoomError::pipeline_execution($name, format!($fmt, $($arg)*)))
+    };
+}
+
+// Macro for creating job execution errors
+#[macro_export]
+macro_rules! job_error {
+    ($name:expr, $msg:expr) => {
+        Err(crate::error::LoomError::job_execution($name, $msg))
+    };
+    ($name:expr, $fmt:expr, $($arg:tt)*) => {
+        Err(crate::error::LoomError::job_execution($name, format!($fmt, $($arg)*)))
+    };
 }

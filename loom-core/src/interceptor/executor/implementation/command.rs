@@ -4,6 +4,7 @@ use std::process::Command;
 use std::sync::Arc;
 use crate::ast::Expression;
 use crate::context::LoomContext;
+use crate::error::{LoomError, LoomResult};
 use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::executor::config::ExecutorConfig;
 use crate::interceptor::executor::ExecutorInterceptor;
@@ -11,6 +12,7 @@ use crate::interceptor::hook::registry::HookRegistry;
 use crate::interceptor::{InterceptorChain, InterceptorResult};
 use crate::interceptor::result::ExecutionResult;
 use crate::interceptor_result;
+use crate::loom_error;
 use crate::types::LoomValue;
 
 pub struct CommandExecutorInterceptor(pub Vec<Expression>);
@@ -51,26 +53,29 @@ impl CommandExecutorInterceptor {
     fn launch_interceptor(
         &self,
         context: InterceptorContext<'_>,
-    ) -> Result<ExecutionResult, String> {
+    ) -> LoomResult<ExecutionResult> {
         let command =
             self.0.iter()
                 .map(|it|
-                    it.evaluate(context.loom_context, context.execution_context.read().map_err(|_| format!("Error while trying to read"))?.deref())
-                        .map(|it|
+                    it.evaluate(
+                        context.loom_context,
+                        context.execution_context.read().map_err(|_| LoomError::execution("Error while trying to read"))?.deref(),
+                        None
+                    ).map(|it|
                             match it {
                                 LoomValue::Literal(lit) => lit.stringify(),
                                 _ => panic!("Unexpected")
                             }
                         )
                 )
-                .collect::<Result<Vec<_>, String>>()?
+                .collect::<Result<Vec<_>, LoomError>>()?
             .join("");
         
-        self.execute_command(&command, context.execution_context.read().map_err(|_| format!("Error while trying to read"))?.deref())
+        self.execute_command(&command, context.execution_context.read().map_err(|_| LoomError::execution("Error while trying to read"))?.deref())
     }
     
     /// Esegue un comando in modo cross-platform
-    fn execute_command(&self, command_string: &str, context: &ExecutionContext) -> Result<ExecutionResult, String> {
+    fn execute_command(&self, command_string: &str, context: &ExecutionContext) -> LoomResult<ExecutionResult> {
         if context.dry_run {
             return Ok(ExecutionResult {
                 output: Some(format!("DRY RUN: Would execute: {}", command_string)),
@@ -82,7 +87,7 @@ impl CommandExecutorInterceptor {
         // Parsing del comando per separare comando base e argomenti
         // let parts = self.parse_command(command_string)?;
         // if parts.is_empty() {
-        //     return Err("Empty command".to_string());
+        //     return loom_error!("Empty command");
         // }
 
         // let (cmd, args) = parts.split_first().unwrap();
@@ -149,7 +154,7 @@ impl CommandExecutorInterceptor {
 
     // /// Parsing semplice del comando per separare comando e argomenti
     // /// Gestisce le virgolette per argomenti con spazi
-    // fn parse_command(&self, command_string: &str) -> Result<Vec<String>, String> {
+    // fn parse_command(&self, command_string: &str) -> LoomResult<Vec<String>> {
     //     let mut parts = Vec::new();
     //     let mut current_part = String::new();
     //     let mut in_quotes = false;
@@ -176,7 +181,7 @@ impl CommandExecutorInterceptor {
     //     }
     //
     //     if in_quotes {
-    //         return Err("Unclosed quote in command".to_string());
+    //         return loom_error!("Unclosed quote in command");
     //     }
     //
     //     if !current_part.is_empty() {

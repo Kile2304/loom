@@ -1,5 +1,6 @@
 use crate::ast::{Definition, DirectiveCall, Expression, Statement};
 use crate::context::LoomContext;
+use crate::error::{LoomError, LoomResult};
 use crate::interceptor::context::ExecutionContext;
 use crate::interceptor::directive::ActiveDirectiveInterceptor;
 use crate::interceptor::executor::interceptor::ExecutorInterceptor;
@@ -156,7 +157,7 @@ impl From<&Definition> for ExecutionActivity {
 
 impl ExecutionActivity {
     
-    pub fn build_child(&self, loom_context: &LoomContext, context: &ExecutionContext) -> Result<Vec<ExecutionActivity>, String> {
+    pub fn build_child(&self, loom_context: &LoomContext, context: &ExecutionContext) -> LoomResult<Vec<ExecutionActivity>> {
         Ok(
             match self {
                 ExecutionActivity::Command(_) => vec![],
@@ -176,14 +177,16 @@ impl ExecutionActivity {
                                     let name = 
                                         parts.into_iter()
                                             .map(|it|
-                                                it.evaluate(loom_context, context)
-                                                    .and_then(|it| it.stringify(loom_context, context))
+                                                it.evaluate(loom_context, context, None)
+                                                    .and_then(|it| 
+                                                        it.stringify(loom_context, context)
+                                                    )
                                             )
-                                        .collect::<Result<Vec<_>, _>>()
+                                        .collect::<LoomResult<Vec<_>>>()
                                             .map(|it| it.join(""))?;
                                     let job_definition = 
                                         loom_context.find_definition(&name)
-                                            .ok_or_else(||format!("Cannot find Job: '{name}'"))?;
+                                            .ok_or_else(|| LoomError::definition_resolution(name.clone(), "Cannot find Job"))?;
                                     Ok(
                                         ExecutionActivity::Job {
                                             name: name,
@@ -201,10 +204,10 @@ impl ExecutionActivity {
                                     )
                                 }
                                 // Non dovrebbe MAI capitare perchè controllato durante il parsing, ma, meglio controllarlo comunque...
-                                _ => Err(format!("Tipo di statement non previsto per uno stage!"))
+                                _ => Err(LoomError::execution("Tipo di statement non previsto per uno stage!"))
                             }
                         })
-                    .collect::<Result<Vec<_>, _>>()?
+                    .collect::<LoomResult<Vec<_>>>()?
                 }
                 ExecutionActivity::Pipeline { stages, .. } => {
                     stages.iter()

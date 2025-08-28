@@ -2,10 +2,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use crate::ast::DirectiveCall;
 use crate::context::LoomContext;
+use crate::error::{LoomError, LoomResult};
 use crate::interceptor::context::ExecutionContext;
 use crate::interceptor::directive::ActiveDirectiveInterceptor;
 use crate::interceptor::directive::interceptor::DirectiveInterceptor;
 use crate::interceptor::priority::PriorityRanges;
+use crate::loom_error;
 
 // Manager per interceptor di direttive
 pub struct DirectiveInterceptorManager {
@@ -19,7 +21,7 @@ impl DirectiveInterceptorManager {
         }
     }
 
-    pub fn register(&mut self, interceptor: Arc<dyn DirectiveInterceptor>) -> Result<(), String> {
+    pub fn register(&mut self, interceptor: Arc<dyn DirectiveInterceptor>) -> LoomResult<()> {
         let name = interceptor.directive_name().to_string();
         let priority = interceptor.priority();
 
@@ -36,12 +38,12 @@ impl DirectiveInterceptorManager {
         loom_context: &LoomContext,
         context: &ExecutionContext,
         directives: &[DirectiveCall]
-    ) -> Result<Vec<ActiveDirectiveInterceptor>, String> {
+    ) -> LoomResult<Vec<ActiveDirectiveInterceptor>> {
         let mut active = Vec::new();
 
         for directive in directives {
             let interceptor = self.interceptors.get(&directive.name)
-                .ok_or_else(|| format!("Unknown directive: {}", directive.name))?;
+                .ok_or_else(|| LoomError::execution(format!("Unknown directive: {}", directive.name)))?;
 
             let params = interceptor.parse_parameters(loom_context, context, directive)?;
 
@@ -59,7 +61,7 @@ impl DirectiveInterceptorManager {
         Ok(active)
     }
 
-    fn validate_directive_priority(&self, priority: i32) -> Result<(), String> {
+    fn validate_directive_priority(&self, priority: i32) -> LoomResult<()> {
         let valid_ranges = [
             PriorityRanges::DIRECTIVE_HIGH,
             PriorityRanges::DIRECTIVE_NORMAL,
@@ -69,10 +71,10 @@ impl DirectiveInterceptorManager {
         let is_valid = valid_ranges.iter().any(|range| range.contains(&priority));
 
         if !is_valid {
-            return Err(format!(
+            return loom_error!(
                 "Directive interceptor priority {} is not in valid range. Use: DIRECTIVE_HIGH (7000-8000), DIRECTIVE_NORMAL (3000-5000), DIRECTIVE_SUPPORT (500-1000)",
                 priority
-            ));
+            );
         }
 
         Ok(())

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::global::config::GlobalInterceptorConfig;
 use crate::interceptor::global::GlobalInterceptorCategory;
-use crate::interceptor::InterceptorChain;
+use crate::interceptor::{InterceptorChain, InterceptorResult};
 use crate::interceptor::result::ExecutionResult;
 use crate::interceptor::scope::{ExecutionActivity, ExecutionScope};
 
@@ -40,7 +40,7 @@ pub trait GlobalInterceptor: Send + Sync {
         context: InterceptorContext<'_>,
         config: &GlobalInterceptorConfig,
         next: Box<InterceptorChain<'_>>,
-    ) -> Result<ExecutionResult, String>;
+    ) -> InterceptorResult;
 
     /// Valuta una condizione di attivazione
     fn evaluate_condition(&self, condition: &ActivationCondition, context: &ExecutionContext) -> bool {

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use crate::error::LoomError;
 use crate::interceptor::{ActiveInterceptor, InterceptorChain, InterceptorResult};
 use crate::interceptor::context::InterceptorContext;
 use crate::interceptor::engine::InterceptorEngine;
@@ -64,7 +65,7 @@ impl ExecutorInterceptor for SequentialExecutorInterceptor {
                 }
             }
         }
-        result.ok_or("The result of a SequentialExecutor should not be None".to_string())
+        result.ok_or(LoomError::execution("The result of a SequentialExecutor should not be None".to_string()))
         // context.execution_context.previous_result.take().ok_or("The result of a SequentialExecutor should not be None".to_string())
         // InterceptorEngine::execute_chain(loom_context, context, hook_registry, &self.0)
     }

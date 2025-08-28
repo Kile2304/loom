@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use crate::ast::DirectiveCall;
 use crate::context::LoomContext;
+use crate::error::LoomResult;
 use crate::interceptor::context::{ExecutionContext, InterceptorContext};
 use crate::interceptor::{InterceptorChain, InterceptorResult};
 use crate::types::LoomValue;
@@ -25,7 +26,7 @@ pub trait DirectiveInterceptor: Send + Sync {
         loom_context: &LoomContext,
         execution_context: &ExecutionContext,
         call: &DirectiveCall
-    ) -> Result<HashMap<String, LoomValue>, String>;
+    ) -> LoomResult<HashMap<String, LoomValue>>;
 
     fn priority(&self) -> i32 { 100 }
 

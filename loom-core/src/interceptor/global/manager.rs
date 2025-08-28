@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::error::{LoomError, LoomResult};
 use crate::interceptor::context::ExecutionContext;
 use crate::interceptor::global::ActiveGlobalInterceptor;
 use crate::interceptor::global::config::GlobalInterceptorConfig;
 use crate::interceptor::global::interceptor::GlobalInterceptor;
 use crate::interceptor::priority::PriorityRanges;
+use crate::loom_error;
 
 /// Manager per interceptor globali
 pub struct GlobalInterceptorManager {
@@ -22,7 +24,7 @@ impl GlobalInterceptorManager {
         }
     }
 
-    pub fn register(&mut self, interceptor: Arc<dyn GlobalInterceptor>) -> Result<(), String> {
+    pub fn register(&mut self, interceptor: Arc<dyn GlobalInterceptor>) -> LoomResult<()> {
         let name = interceptor.name().to_string();
         let config = interceptor.default_config();
 
@@ -34,9 +36,9 @@ impl GlobalInterceptorManager {
         Ok(())
     }
 
-    pub fn configure(&mut self, name: &str, config: GlobalInterceptorConfig) -> Result<(), String> {
+    pub fn configure(&mut self, name: &str, config: GlobalInterceptorConfig) -> LoomResult<()> {
         if !self.interceptors.contains_key(name) {
-            return Err(format!("Global interceptor '{}' not found", name));
+            return loom_error!("Global interceptor '{}' not found", name);
         }
 
         self.validate_global_priority(config.priority)?;
@@ -44,12 +46,12 @@ impl GlobalInterceptorManager {
         Ok(())
     }
 
-    pub fn set_user_override(&mut self, name: &str, enabled: bool) -> Result<(), String> {
+    pub fn set_user_override(&mut self, name: &str, enabled: bool) -> LoomResult<()> {
         let config = self.configs.get(name)
-            .ok_or_else(|| format!("Global interceptor '{}' not found", name))?;
+            .ok_or_else(|| LoomError::execution(format!("Global interceptor '{}' not found", name)))?;
 
         if !config.user_overridable {
-            return Err(format!("Global interceptor '{}' cannot be overridden", name));
+            return loom_error!("Global interceptor '{}' cannot be overridden", name);
         }
 
         self.user_overrides.insert(name.to_string(), enabled);
@@ -84,7 +86,7 @@ impl GlobalInterceptorManager {
         active
     }
 
-    fn validate_global_priority(&self, priority: i32) -> Result<(), String> {
+    fn validate_global_priority(&self, priority: i32) -> LoomResult<()> {
         let valid_ranges = [
             PriorityRanges::CRITICAL_SYSTEM,
             PriorityRanges::GLOBAL_HIGH,
@@ -96,10 +98,10 @@ impl GlobalInterceptorManager {
         let is_valid = valid_ranges.iter().any(|range| range.contains(&priority));
 
         if !is_valid {
-            return Err(format!(
+            return loom_error!(
                 "Global interceptor priority {} is not in valid range. Use: CRITICAL_SYSTEM (9000-10000), GLOBAL_HIGH (8000-9000), GLOBAL_NORMAL (5000-7000), GLOBAL_SUPPORT (1000-3000), MONITORING (0-500)",
                 priority
-            ));
+            );
         }
 
         Ok(())
