@@ -42,7 +42,7 @@ impl DirectiveInterceptorManager {
         let mut active = Vec::new();
 
         for directive in directives {
-            let interceptor = self.interceptors.get(&directive.name)
+            let interceptor = self.interceptors.get(&directive.name.to_string())
                 .ok_or_else(|| LoomError::execution(format!("Unknown directive: {}", directive.name)))?;
 
             let params = interceptor.parse_parameters(loom_context, context, directive)?;
@@ -50,7 +50,7 @@ impl DirectiveInterceptorManager {
             active.push(ActiveDirectiveInterceptor {
                 interceptor: interceptor.clone(),
                 params,
-                name: directive.name.clone(),
+                name: directive.name.to_string(),
                 priority: interceptor.priority(),
             });
         }

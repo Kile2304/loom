@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use serde_json::Value;
 use crate::ast::Expression;
 use crate::context::LoomContext;
@@ -9,7 +10,7 @@ use crate::interceptor::context::ExecutionContext;
 #[derive(Debug, Clone, PartialEq)]
 pub enum LoomValue {
     Literal(LiteralValue),
-    Expression(Box<Expression>),
+    Expression(Arc<Expression>),
     Empty,
 }
 
@@ -79,7 +80,6 @@ impl TryInto<Value> for LoomValue {
     }
 }
 
-
 /// Types of executable definitions
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DefinitionKind {
@@ -92,31 +92,31 @@ pub enum DefinitionKind {
 /// Enum definition
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnumDef {
-    pub name: String,
-    pub variants: HashMap<String, String>,
+    pub name: Arc<str>,
+    pub variants: Arc<HashMap<String, String>>,
 }
 
 /// Variable assignment
 #[derive(Debug, Clone, PartialEq)]
 pub struct VariableAssignment {
-    pub name: String,
-    pub value: Expression,
+    pub name: Arc<str>,
+    pub value: Arc<Expression>,
 }
 
 /// Parameter definition with unevaluated expressions (for parsing/definition phase)
 #[derive(Debug, Clone, PartialEq)]
 pub struct ParameterDefinition {
-    pub name: String,
-    pub param_type: Option<String>,
-    pub default_value: Option<Expression>, // Unevaluated expression
+    pub name: Arc<str>,
+    pub param_type: Option<Arc<str>>,
+    pub default_value: Option<Arc<Expression>>, // Unevaluated expression
     pub required: bool,
 }
 
 /// Function signature with parameter definitions
 #[derive(Debug, Clone, PartialEq)]
 pub struct Signature {
-    pub name: String,
-    pub parameters: Vec<ParameterDefinition>, // Use ParameterDefinition here
+    pub name: Arc<str>,
+    pub parameters: Arc<[ParameterDefinition]>, // Use ParameterDefinition here
 }
 
 #[derive(Debug, Default, Clone)]
@@ -156,7 +156,7 @@ impl Signature {
     ) -> LoomResult<Vec<(String, LoomValue)>> {
         args.iter()
             .map(|arg|
-                 (arg, self.parameters.iter().find(|param| param.name == arg.name))
+                 (arg, self.parameters.iter().find(|param| param.name.as_ref() == arg.name))
             ).filter(|(_, p)| p.is_some())
             .map(|(v1, v2)| (v1, v2.unwrap()))
             .map(|(v1, v2)|
@@ -167,20 +167,25 @@ impl Signature {
     }
 
     pub fn positional_arg_from_expression(
-        &self, mut args: Vec<Expression>
+        &self,
+        args: &[Expression] // Reference invece di owned Vec
     ) -> LoomResult<Vec<InputArg>> {
-        let args_len = args.len();
-        if args_len > self.parameters.len() {
-            return Err(LoomError::execution(format!("La definition '{}' ha {} parametri e non {}", self.name, self.parameters.len(), args_len)));
+        if args.len() > self.parameters.len() {
+            return Err(LoomError::execution(format!(
+                "La definition '{}' ha {} parametri e non {}",
+                self.name, self.parameters.len(), args.len()
+            )));
         }
+
         Ok(
-            self.parameters.iter().enumerate()
-                .take_while(|(index, _)| *index < args_len)
-                .map(|(index, it)| InputArg {
-                    name: it.name.to_string(),
-                    value: Some(args.remove(0)),
+            self.parameters.iter()
+                .take(args.len())
+                .zip(args.iter())
+                .map(|(param, expr)| InputArg {
+                    name: param.name.to_string(),
+                    value: Some(expr.clone()), // Solo questo clone necessario
                 })
-                .collect::<Vec<_>>()
+                .collect()
         )
     }
 
@@ -198,75 +203,49 @@ impl ParameterDefinition {
         match value {
             Some(value) => {
                 if let Some(param_type) = &self.param_type {
-                    Ok(
-                        LoomValue::Literal(
-                            match param_type.as_str() {
-                                "bool" => {
-                                    value.evaluate(loom_context, context, None)
-                                        .and_then(|it|
-                                          TryInto::<bool>::try_into(it)
-                                              .map(LiteralValue::Boolean)
-                                        )?
-                                }
-                                "number" => {
-                                    value.evaluate(loom_context, context, None)
-                                        .and_then(|it|
-                                            TryInto::<i64>::try_into(it)
-                                                .map(LiteralValue::Number)
-                                        )?
-                                }
-                                "float" => {
-                                    value.evaluate(loom_context, context, None)
-                                        .and_then(|it|
-                                            TryInto::<f64>::try_into(it)
-                                                .map(LiteralValue::Float)
-                                        )?
-                                }
-                                "string" => {
-                                    value.evaluate(loom_context, context, None)
-                                        .and_then(|it|
-                                            TryInto::<String>::try_into(it)
-                                                .map(LiteralValue::String)
-                                        )?
-                                }
-                                // Enumerator type
-                                other => {
-                                    let en = loom_context.find_enum(other).unwrap();
-                                    let str =
-                                        value.evaluate(loom_context, context, None)
-                                            .and_then(|it|
-                                                TryInto::<String>::try_into(it)
-                                            )?;
-                                    en.variants.get(&str)
-                                        .map(|it| LiteralValue::String(it.to_string()))
-                                    .ok_or_else(||
-                                        LoomError::execution(format!(
-                                            "Il parametro '{}' è tipizzato come enum e '{}' non è uno dei valori attesi.\nValori attesi: {:?}"
-                                            , self.name, str, en.variants.keys()
-                                        ))
-                                    )?
-                                }
-                            }
-                        )
-                    )
+                    let evaluated = value.evaluate(loom_context, context, None)?;
+
+                    Ok(LoomValue::Literal(match param_type.as_ref() {
+                        "bool" => LiteralValue::Boolean((&evaluated).clone().try_into()?),
+                        "number" => LiteralValue::Number((&evaluated).clone().try_into()?),
+                        "float" => LiteralValue::Float((&evaluated).clone().try_into()?),
+                        "string" => LiteralValue::String((&evaluated).clone().try_into()?),
+                        // Enumerator type
+                        other => {
+                            let en = loom_context.find_enum(other)
+                                .ok_or_else(|| LoomError::execution(format!("Enum '{}' not found", other)))?;
+                            let str_val: String = (&evaluated).clone().try_into()?;
+
+                            en.variants.get(&str_val)
+                                .cloned()
+                                .map(LiteralValue::String)
+                                .ok_or_else(|| {
+                                    LoomError::execution(format!(
+                                        "Il parametro '{}' è tipizzato come enum e '{}' non è uno dei valori attesi.\nValori attesi: {:?}",
+                                        self.name, str_val, en.variants.keys()
+                                    ))
+                                })?
+                        }
+                    }))
                 } else {
-                    value.evaluate(loom_context, context, None)
-                        .and_then(|val| {
-                            val.stringify(loom_context, context)
-                                .map(|s| LoomValue::Literal(LiteralValue::String(s)))
-                        })
+                    let evaluated = value.evaluate(loom_context, context, None)?;
+                    let stringified = evaluated.stringify(loom_context, context)?;
+                    Ok(LoomValue::Literal(LiteralValue::String(stringified)))
                 }
             }
             None => {
                 match &self.param_type {
                     None => Ok(LoomValue::Literal(LiteralValue::Boolean(true))),
                     Some(param_type) => {
-                        if param_type.as_str() == "bool" {
+                        if param_type.as_ref() == "bool" {
                             Ok(LoomValue::Literal(LiteralValue::Boolean(true)))
                         } else {
                             self.default_value
                                 .as_ref()
-                            .ok_or_else(|| LoomError::execution(format!("No default value for parameter {} and no value provided", self.name)))?
+                                .ok_or_else(|| LoomError::execution(format!(
+                                    "No default value for parameter {} and no value provided",
+                                    self.name
+                                )))?
                                 .evaluate(loom_context, context, None)
                         }
                     }
@@ -309,7 +288,7 @@ impl ParameterDefinition {
             }
         };
 
-        (self.name.clone(), value)
+        (self.name.to_string(), value)
     }
 
     /// Helper to evaluate function calls
@@ -389,7 +368,7 @@ impl Signature {
     ) -> HashMap<String, LoomValue> {
         let mut result = HashMap::new();
 
-        for param_def in &self.parameters {
+        for param_def in self.parameters.iter() {
             let (param_name, default_value) = param_def.evaluate(loom_context, context);
 
             let final_value = if let Some(provided_value) = args.get(&param_name) {

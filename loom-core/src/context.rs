@@ -3,7 +3,7 @@ use crate::types::*;
 use crate::error::{LoomError, LoomResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
-
+use std::sync::Arc;
 // TODO: In futuro pensasre se integrare il supporto di namespace
 
 // TODO: Rendere il LoomContext più avanzato, in modo che ci sia un oggetto esterno contenente la cache
@@ -18,10 +18,10 @@ pub type EnumId = uuid::Uuid;
 #[derive(Debug)]
 pub struct LoomContext {
     /// Moduli caricati/file
-    pub modules: HashMap<ModuleId, Module>,
+    pub modules: HashMap<ModuleId, Arc<Module>>,
     /// Alcune definitions hanno uno o n alias, quindi, questa mappa avrà come valore, l'indice per recuperare la definizione
-    definitions_ref: HashMap<String, (ModuleId, DefinitionId)>,
-    enums_def_ref: HashMap<String, (ModuleId, EnumId)>,
+    definitions_ref: HashMap<Arc<str>, (ModuleId, DefinitionId)>,
+    enums_def_ref: HashMap<Arc<str>, (ModuleId, EnumId)>,
     // No variable ref, perchè, hanno scope "locale" x file.
     // TODO: Momentaneamente pensata come cache, valutare se necessaria!
     /// Import graph for dependency resolution
@@ -30,16 +30,16 @@ pub struct LoomContext {
 
 #[derive(Debug, PartialEq)]
 pub struct Module {
-    pub definitions: HashMap<DefinitionId, Definition>,
-    pub enums: HashMap<EnumId, EnumDef>,
-    pub variables: HashMap<String, LoomValue>,
+    pub definitions: HashMap<DefinitionId, Arc<Definition>>,
+    pub enums: HashMap<EnumId, Arc<EnumDef>>,
+    pub variables: HashMap<Arc<str>, LoomValue>,
     pub dependencies: HashMap<PathBuf, Vec<ImportKind>>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum ImportKind {
     ImportAll,
-    ImportDefinition(String),
+    ImportDefinition(Arc<str>),
 }
 
 impl LoomContext {
@@ -71,25 +71,26 @@ impl LoomContext {
     
 
     /// Find a definition by name
-    pub fn find_definition(&self, name: &str) -> Option<&Definition> {
+    pub fn find_definition(&self, name: &str) -> Option<Arc<Definition>> {
         self.definitions_ref.get(name)
             .and_then(|index|
                 self.modules.get(&index.0)
                     .and_then(|it| it.definitions.get(&index.1))
-            )
+            ).map(Arc::clone)
     }
 
     /// Find an enum by name
-    pub fn find_enum(&self, name: &str) -> Option<&EnumDef> {
+    pub fn find_enum(&self, name: &str) -> Option<Arc<EnumDef>> {
         self.enums_def_ref.get(name)
             .and_then(|index| self.modules.get(&index.0)?.enums.get(&index.1))
+            .map(Arc::clone)
     }
 
     /// Get variable value
     // pub fn get_variable(&self, name: &str) -> Option<&LoomValue> {
     //     self.variables.get(name)
     // }
-    pub fn get_variables(&self, name: &str) -> Option<&HashMap<String, LoomValue>> {
+    pub fn get_variables(&self, name: &str) -> Option<&HashMap<Arc<str>, LoomValue>> {
         self.definitions_ref.get(name)
             .and_then(|index|
                 self.modules.get(&index.0)
@@ -228,12 +229,12 @@ impl LoomContext {
 
     fn validate_definition_references(&self, _name: &str, definition: &Definition, errors: &mut Vec<LoomError>) {
         // Validate that all referenced jobs/recipes exist
-        self.validate_block_references(&definition.body, errors);
+        self.validate_block_references(definition.body.clone(), errors);
     }
 
-    fn validate_block_references(&self, blocks: &Vec<Block>, errors: &mut Vec<LoomError>) {
-        for block in blocks {
-            for statement in &block.statements {
+    fn validate_block_references(&self, blocks: Arc<[Block]>, errors: &mut Vec<LoomError>) {
+        for block in blocks.iter() {
+            for statement in block.statements.iter() {
                 match statement {
                     Statement::Call { name, .. } => {
                         if !self.definitions_ref.contains_key(name) {

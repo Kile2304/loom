@@ -15,7 +15,7 @@ use crate::interceptor_result;
 use crate::loom_error;
 use crate::types::LoomValue;
 
-pub struct CommandExecutorInterceptor(pub Vec<Expression>);
+pub struct CommandExecutorInterceptor(pub Arc<[Expression]>);
 
 #[async_trait::async_trait]
 impl ExecutorInterceptor for CommandExecutorInterceptor {

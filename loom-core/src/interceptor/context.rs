@@ -13,7 +13,7 @@ use crate::types::{LoomValue, ParallelizationKind};
 #[derive(Debug, Clone)]
 pub struct ExecutionContext {
     // TODO: Valutare,     variables: Cow<'a, HashMap<String, LoomValue>>,
-    pub variables: HashMap<String, LoomValue>,
+    pub variables: HashMap<Arc<str>, LoomValue>,
     // pub variables: Cow<'a, HashMap<String, LoomValue>>,
     pub env_vars: HashMap<String, String>,
     pub working_dir: Option<String>,
