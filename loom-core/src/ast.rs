@@ -1,5 +1,6 @@
 use crate::types::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 use crate::context::{LoomContext, Module};
 use crate::definition::ArgDefinition;
 use crate::error::{LoomError, LoomResult, UndefinedKind};
@@ -10,8 +11,8 @@ use crate::interceptor::context::ExecutionContext;
 pub struct Definition {
     pub kind: DefinitionKind,
     pub signature: Signature,
-    pub body: Vec<Block>,
-    pub directives: Vec<DirectiveCall>,
+    pub body: Arc<[Block]>,
+    pub directives: Arc<[DirectiveCall]>,
     pub position: Position,
     pub module_index: usize,
 }
@@ -19,9 +20,9 @@ pub struct Definition {
 /// Block of statements
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
-    pub statements: Vec<Statement>,
-    pub directives: Vec<DirectiveCall>, // @if, @for, etc.
-    pub label: Vec<Expression>, // Optional implicit (vec may be empty)
+    pub statements: Arc<[Statement]>,
+    pub directives: Arc<[DirectiveCall]>, // @if, @for, etc.
+    pub label: Arc<[Expression]>, // Optional implicit (vec may be empty)
 }
 
 /// Individual statement in a block
@@ -29,15 +30,15 @@ pub struct Block {
 pub enum Statement {
     /// Shell command execution
     Command {
-        parts: Vec<Expression>,
-        directives: Vec<DirectiveCall>, // Direttive anche sui singoli comandi
+        parts: Arc<[Expression]>,
+        directives: Arc<[DirectiveCall]>, // Direttive anche sui singoli comandi
     },
 
     /// Recipe/job call
     Call {
-        name: String,
-        args: Vec<Expression>,
-        directives: Vec<DirectiveCall>, // Direttive anche sulle singole call
+        name: Arc<str>,
+        args: Arc<[Expression]>,
+        directives: Arc<[DirectiveCall]>, // Direttive anche sulle singole call
     },
 
 }
@@ -45,10 +46,10 @@ pub enum Statement {
 /// Assignment targets
 #[derive(Debug, Clone, PartialEq)]
 pub enum AssignmentTarget {
-    Variable(String),
+    Variable(Arc<str>),
     IndexAccess {
-        object: String,
-        index: Expression,
+        object: Arc<str>,
+        index: Arc<Expression>,
     },
 }
 
@@ -59,43 +60,43 @@ pub enum Expression {
     Literal(LiteralValue),
 
     /// Variable reference
-    Variable(String),
+    Variable(Arc<str>),
 
     /// Function call
     FunctionCall {
-        name: String,
-        args: Vec<Expression>,
+        name: Arc<str>,
+        args: Arc<[Expression]>,
     },
 
     /// Array/object index access
     IndexAccess {
-        object: Box<Expression>,
-        index: Box<Expression>,
+        object: Arc<Expression>,
+        index: Arc<Expression>,
     },
 
     /// Binary operations
     BinaryOp {
-        left: Box<Expression>,
+        left: Arc<Expression>,
         operator: BinaryOperator,
-        right: Box<Expression>,
+        right: Arc<Expression>,
     },
 
     /// Unary operations
     UnaryOp {
         operator: UnaryOperator,
-        operand: Box<Expression>,
+        operand: Arc<Expression>,
     },
 
     /// String interpolation
     Interpolation {
-        parts: Vec<InterpolationPart>,
+        parts: Arc<[InterpolationPart]>,
     },
 
     // C'è già IndecxAccess, ha davvero senso?
     /// Enum access (e.g., Environment["production"])
     EnumAccess {
-        enum_name: String,
-        variant: String,
+        enum_name: Arc<str>,
+        variant: Arc<str>,
     },
 }
 
@@ -103,13 +104,13 @@ pub enum Expression {
 /// Parts of string interpolation
 #[derive(Debug, Clone, PartialEq)]
 pub enum InterpolationPart {
-    Text(String),
-    Expression(Expression),
+    Text(Arc<str>),
+    Expression(Arc<Expression>),
 }
 
 // TODO: Non ancora integrati, prevedere di integrare in futuro
 /// Binary operators
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BinaryOperator {
     // Arithmetic
     Add, Subtract, Multiply, Divide, Modulo,
@@ -128,7 +129,7 @@ pub enum BinaryOperator {
 }
 
 /// Unary operators
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum UnaryOperator {
     Not,
     Minus,
@@ -137,26 +138,32 @@ pub enum UnaryOperator {
 /// Directive call (e.g., @doc, @parallel, @timeout)
 #[derive(Debug, Clone, PartialEq)]
 pub struct DirectiveCall {
-    pub name: String,
-    pub args: Vec<ArgDefinition>,
+    pub name: Arc<str>,
+    pub args: Arc<[ArgDefinition]>,
     pub position: Position,
 }
 
 /// Directive argument
 #[derive(Debug, Clone, PartialEq)]
 pub enum DirectiveArg {
-    Positional(Expression),
+    Positional(Arc<Expression>),
     Named {
-        name: String,
-        value: Expression,
+        name: Arc<str>,
+        value: Arc<Expression>,
     },
 }
 
 impl Block {
 
-    pub fn new(statements: Vec<Statement>, directives: Vec<DirectiveCall>, label: Vec<Expression>) -> Self {
+    pub fn new(
+        statements: impl Into<Arc<[Statement]>>,
+        directives: impl Into<Arc<[DirectiveCall]>>,
+        label: impl Into<Arc<[Expression]>>
+    ) -> Self {
         Self {
-            statements, directives, label
+            statements: statements.into(),
+            directives: directives.into(),
+            label: label.into(),
         }
     }
 
@@ -181,7 +188,7 @@ impl Expression {
                     .ok_or_else(|| {
                         if let Some(pos) = position {
                             LoomError::undefined(
-                                var_name,
+                                var_name.to_string(),
                                 UndefinedKind::Variable,
                                 pos
                             )
@@ -250,16 +257,16 @@ impl Expression {
             }
 
             Expression::EnumAccess { enum_name, variant } => {
-                let en = loom_context.find_enum(enum_name.as_str())
+                let en = loom_context.find_enum(enum_name.as_ref())
                     .ok_or_else(|| {
                         if let Some(pos) = &position {
-                            LoomError::undefined(enum_name, UndefinedKind::Enum, pos.clone())
+                            LoomError::undefined(enum_name.to_string(), UndefinedKind::Enum, pos.clone())
                         } else {
                             LoomError::execution(format!("Enum '{}' not found", enum_name))
                         }
                     })?;
 
-                en.variants.get(variant.as_str())
+                en.variants.get(variant.as_ref())
                     .cloned()
                     .map(|value| LoomValue::Literal(LiteralValue::String(value)))
                     .ok_or_else(|| {
@@ -282,7 +289,7 @@ impl Expression {
 
             Expression::Interpolation { parts } => {
                 let mut result = String::new();
-                for part in parts {
+                for part in parts.iter() {
                     match part {
                         InterpolationPart::Text(t) => result.push_str(t),
                         InterpolationPart::Expression(expr) => {

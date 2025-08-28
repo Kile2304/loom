@@ -48,7 +48,7 @@ impl ExecutorInterceptor for DefinitionExecutorInterceptor {
                     .map_err(|_| format!("Couldn't borrow"))?
                     .deref_mut()
                     .variables
-                .insert(variable_name, value);
+                .insert(Arc::<str>::from(variable_name), value);
                 Ok(())
                 // context.execution_context.get_mut().variables.insert(variable_name, value);
             })?;

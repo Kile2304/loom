@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use crate::ast::Statement;
@@ -21,100 +20,132 @@ use crate::interceptor::global::config::GlobalInterceptorConfig;
 use crate::interceptor::global::interceptor::GlobalInterceptor;
 use crate::interceptor::global::manager::GlobalInterceptorManager;
 use crate::interceptor::hook::registry::HookRegistry;
-use crate::interceptor::result::ExecutionResult;
 use crate::interceptor::scope::{ExecutionActivity, ExecutionScope};
 use crate::types::ParallelizationKind;
-use crate::loom_error;
 
-// TODO: Attivare il registering e unregistering degli interceptor a runtime, per farlo probabilmente, dovrò aggiungere dei riferimenti al plugin.
-// TODO: Ovviamente questa cosa potrà essere fatta solo se non c'è nulla in esecuzione, altrimenti, bisognerà aggiungerlo in pending,
-// TODO: Ergo, purtroppo, dovrò gestire uno stack di esecuzioni...
-
-/// Middleware Pattern (Filter Chain Pattern)
+/// Middleware Pattern (Filter Chain Pattern) ottimizzato
 /// Esegue i vari Task/Job/Command, ma, solo dopo aver eseguito
 /// Gli interceptor globali e le direttive, formando per l'appunto un Middleware Pattern
 pub struct InterceptorEngine {
     global_manager: GlobalInterceptorManager,
     directive_manager: DirectiveInterceptorManager,
     hook_registry: HookRegistry,
+
+    // Cache per evitare ricostruzione frequente di chain
+    chain_cache: RwLock<HashMap<String, Vec<ActiveInterceptor>>>,
 }
 
 impl InterceptorEngine {
     pub fn new() -> Self {
-        let mut engine = Self {
+        Self {
             global_manager: GlobalInterceptorManager::new(),
             directive_manager: DirectiveInterceptorManager::new(),
             hook_registry: HookRegistry::new(),
-        };
-
-        // Registra interceptor built-in
-        // engine.register_builtin_interceptors();
-
-        engine
+            chain_cache: RwLock::new(HashMap::new()),
+        }
     }
 
     /// Registra interceptor globale
     pub fn register_global(&mut self, interceptor: Arc<dyn GlobalInterceptor>) -> LoomResult<()> {
+        // Invalida cache quando registriamo nuovi interceptor
+        if let Ok(mut cache) = self.chain_cache.write() {
+            cache.clear();
+        }
         self.global_manager.register(interceptor)
     }
 
     /// Registra interceptor di direttiva
     pub fn register_directive(&mut self, interceptor: Arc<dyn DirectiveInterceptor>) -> LoomResult<()> {
+        if let Ok(mut cache) = self.chain_cache.write() {
+            cache.clear();
+        }
         self.directive_manager.register(interceptor)
     }
 
     /// Configura interceptor globale
     pub fn configure_global(&mut self, name: &str, config: GlobalInterceptorConfig) -> LoomResult<()> {
+        if let Ok(mut cache) = self.chain_cache.write() {
+            cache.clear();
+        }
         self.global_manager.configure(name, config)
     }
 
     /// Override temporaneo
     pub fn override_global(&mut self, name: &str, enabled: bool) -> LoomResult<()> {
+        if let Ok(mut cache) = self.chain_cache.write() {
+            cache.clear();
+        }
         self.global_manager.set_user_override(name, enabled)
     }
 
-    /// Esecuzione unificata con chain mista
+    /// Esecuzione unificata con chain mista - ottimizzata
     pub async fn execute(
         &self,
-        // Contesto globale "immutabile", non può essere modificato dall'esecuzione di una definition.
-        // Mi serve per l'evaluate di expression: Es: StringInterpolation su valore di enum, o esecuzione di una definition come command!
         loom_context: &LoomContext,
-        // Definition Name
-        def_name: String,
-        input_args: Vec<InputArg>,
+        def_name: &str, // Reference invece di owned String
+        input_args: &[InputArg], // Slice invece di Vec owned
     ) -> InterceptorResult {
-        // Dovrebbero essere fatti controlli a monte, quindi, dovrei SEMPRE trovare la definition
-        let definition_target =
-            loom_context.find_definition(&def_name)
-                .ok_or_else(|| LoomError::execution(format!("Cannot find the definition: '{def_name}'")))?;
+        let definition_target = loom_context.find_definition(def_name)
+            .ok_or_else(|| LoomError::execution(format!("Cannot find the definition: '{}'", def_name)))?;
 
-        let scope = ExecutionScope::from(definition_target);
+        let scope = ExecutionScope::from(definition_target.as_ref());
 
+        // Costruisci ExecutionContext una volta sola
         let context = ExecutionContext {
-            variables: loom_context.get_variables(&def_name).unwrap().clone(),
+            variables: loom_context.get_variables(def_name)
+                .cloned()
+                .unwrap_or_default(),
             env_vars: std::env::vars().collect(),
-            working_dir: std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
+            working_dir: std::env::current_dir().ok()
+                .map(|p| p.to_string_lossy().to_string()),
             dry_run: false,
             metadata: HashMap::new(),
             parallelization_kind: ParallelizationKind::Sequential,
-            scope: scope,
+            scope,
         };
-        let target = ExecutionActivity::from(definition_target);
 
-        let interceptor_chain =
-            self.build_target_chain(
-                loom_context,
-                &context,
-                target,
-                &self.global_manager.get_active(&context),
-                Some(input_args)
-            )?;
+        let target = ExecutionActivity::from(definition_target.as_ref());
+        let global_interceptors = self.global_manager.get_active(&context);
+
+        // Usa cache per chain se disponibile
+        let cache_key = format!("{}_{}", def_name, input_args.len());
+        let interceptor_chain = {
+            if let Ok(cache) = self.chain_cache.read() {
+                if let Some(cached_chain) = cache.get(&cache_key) {
+                    cached_chain.clone()
+                } else {
+                    drop(cache); // Release read lock
+                    let chain = self.build_target_chain(
+                        loom_context,
+                        &context,
+                        &target, // Reference invece di owned
+                        &global_interceptors,
+                        Some(input_args)
+                    )?;
+
+                    // Cache la chain
+                    if let Ok(mut cache) = self.chain_cache.write() {
+                        cache.insert(cache_key, chain.clone());
+                    }
+
+                    chain
+                }
+            } else {
+                // Fallback se non riusciamo ad accedere alla cache
+                self.build_target_chain(
+                    loom_context,
+                    &context,
+                    &target,
+                    &global_interceptors,
+                    Some(input_args)
+                )?
+            }
+        };
 
         let interceptor_context = InterceptorContext {
             loom_context,
             execution_context: Arc::new(RwLock::new(context)),
             hook_registry: &self.hook_registry,
-            // TODO: Deve essere passato da fuori
             channel: ExecutionEventChannel::new().0,
         };
 
@@ -122,122 +153,136 @@ impl InterceptorEngine {
         Self::execute_chain(interceptor_context, &interceptor_chain).await
     }
 
-    // TODO: Prevenire chiamate ricorsive tra definition
+    /// Build target chain ottimizzato - usa reference per evitare clone
     fn build_target_chain(
         &self,
         loom_context: &LoomContext,
         context: &ExecutionContext,
-        execution_target: ExecutionActivity,
-        global_interceptor: &Vec<ActiveGlobalInterceptor>,
-        args: Option<Vec<InputArg>>,
+        execution_target: &ExecutionActivity, // Reference
+        global_interceptors: &[ActiveGlobalInterceptor], // Slice
+        args: Option<&[InputArg]>, // Optional slice
     ) -> LoomResult<Vec<ActiveInterceptor>> {
-        match &execution_target {
+        match execution_target {
             ExecutionActivity::Command(command) => {
-                match command {
+                match command.as_ref() {
                     Statement::Command { parts, directives } => {
-                        Ok(
-                            Self::plug_and_sort_chain(
-                                global_interceptor,
-                                self.directive_manager.build_active(loom_context, context, directives)?,
-                                ActiveInterceptor::Executor(
-                                    ActiveExecutorInterceptor::new(
-                                        Arc::new(CommandExecutorInterceptor(parts.to_owned()))
-                                    )
+                        Ok(Self::plug_and_sort_chain(
+                            global_interceptors,
+                            &self.directive_manager.build_active(loom_context, context, directives)?,
+                            ActiveInterceptor::Executor(
+                                ActiveExecutorInterceptor::new(
+                                    Arc::new(CommandExecutorInterceptor(parts.clone()))
                                 )
                             )
-                        )
+                        ))
                     }
                     Statement::Call { name, args, .. } => {
-                        let definition_to_call = loom_context.find_definition(name)
-                            .ok_or_else(|| LoomError::execution(format!("Si ha provato a chiamare una Definition non esistente '{name}'")))?;
-                        let activity = ExecutionActivity::from(definition_to_call);
+                        let definition_to_call = loom_context.find_definition(name.as_ref())
+                            .ok_or_else(|| LoomError::execution(format!("Definition non esistente: '{}'", name)))?;
+
+                        let activity = ExecutionActivity::from(definition_to_call.as_ref());
+                        let converted_args = definition_to_call.signature
+                            .positional_arg_from_expression(args.as_ref())?;
+
                         self.build_target_chain(
                             loom_context,
                             context,
-                            activity,
-                            global_interceptor,
-                            Some(definition_to_call.signature.positional_arg_from_expression(args.to_owned())?)
+                            &activity,
+                            global_interceptors,
+                            Some(&converted_args)
                         )
                     }
                 }
             }
+
             ExecutionActivity::Block(block) => {
-                let target =
-                    self.build_target(
-                        loom_context,
-                        context,
-                        &execution_target,
-                        global_interceptor,
-                        "block-sequence"
-                    )?;
-                Ok(
-                    Self::plug_and_sort_chain(
-                        global_interceptor,
-                        self.directive_manager.build_active(loom_context, context, &block.directives)?,
-                        // TODO: Valutare se serve avere un vero e proprio: BlockExecutor
-                        ActiveInterceptor::Executor(
-                            ActiveExecutorInterceptor::new(
-                                Arc::new(SequentialExecutorInterceptor(target, "Block".to_string()))
-                            )
+                let target = self.build_target_efficiently(
+                    loom_context,
+                    context,
+                    execution_target,
+                    global_interceptors,
+                    "block-sequence"
+                )?;
+
+                Ok(Self::plug_and_sort_chain(
+                    global_interceptors,
+                    &self.directive_manager.build_active(loom_context, context, &block.directives)?,
+                    ActiveInterceptor::Executor(
+                        ActiveExecutorInterceptor::new(
+                            Arc::new(SequentialExecutorInterceptor(target, "Block".to_string()))
                         )
                     )
-                )
+                ))
             }
-            ExecutionActivity::Stage(_) => { Ok(vec![]) }
-            ExecutionActivity::Pipeline { .. } => { Ok(vec![]) }
-            ExecutionActivity::Job { .. } => { Ok(vec![]) }
-            ExecutionActivity::Schedule { .. } => { Ok(vec![]) }
+
+            ExecutionActivity::Stage(_) => Ok(Vec::new()),
+            ExecutionActivity::Pipeline { .. } => Ok(Vec::new()),
+            ExecutionActivity::Job { .. } => Ok(Vec::new()),
+            ExecutionActivity::Schedule { .. } => Ok(Vec::new()),
+
             ExecutionActivity::Definition { directives, name, .. } => {
-                let target =
-                    self.build_target(
-                        loom_context,
-                        context,
-                        &execution_target,
-                        global_interceptor,
-                        "definition-sequence"
-                    )?;
-                // TODO: Creare DefinitionExecutor...
-                Ok(
-                    Self::plug_and_sort_chain(
-                        global_interceptor,
-                        self.directive_manager.build_active(loom_context, context, directives)?,
-                        ActiveInterceptor::Executor(
-                            ActiveExecutorInterceptor::new(Arc::new(DefinitionExecutorInterceptor(name.to_string(), target, args.unwrap_or(vec![]))))
-                        )
+                let target = self.build_target_efficiently(
+                    loom_context,
+                    context,
+                    execution_target,
+                    global_interceptors,
+                    "definition-sequence"
+                )?;
+
+                Ok(Self::plug_and_sort_chain(
+                    global_interceptors,
+                    &self.directive_manager.build_active(loom_context, context, directives)?,
+                    ActiveInterceptor::Executor(
+                        ActiveExecutorInterceptor::new(Arc::new(
+                            DefinitionExecutorInterceptor(
+                                name.to_string(),
+                                target,
+                                args.map(|a| a.to_vec()).unwrap_or_default()
+                            )
+                        ))
                     )
-                )
+                ))
             }
         }
     }
 
-    fn build_target(
+    /// Build target in modo più efficiente - evita clone multipli
+    fn build_target_efficiently(
         &self,
         loom_context: &LoomContext,
         context: &ExecutionContext,
         execution_target: &ExecutionActivity,
-        global_interceptor: &Vec<ActiveGlobalInterceptor>,
+        global_interceptors: &[ActiveGlobalInterceptor],
         name: &str,
     ) -> LoomResult<Vec<ActiveInterceptor>> {
-        execution_target.build_child(loom_context, context)?.into_iter()
-            .map(|it|
-                self.build_target_chain(loom_context, context, it, global_interceptor, None)
-                    .map(SequenceChainInterceptor)
-                    .map(|it| ActiveExecutorInterceptor {
-                        interceptor: Arc::new(it),
-                        config: Default::default(),
-                        name: name.to_string(),
-                    }).map(ActiveInterceptor::Executor)
-            )
-        .collect::<Result<Vec<_>, _>>()
+        let children = execution_target.build_child(loom_context, context)?;
+        let mut result = Vec::with_capacity(children.len());
+
+        for child in children {
+            let chain = self.build_target_chain(
+                loom_context,
+                context,
+                &child,
+                global_interceptors,
+                None
+            )?;
+
+            result.push(ActiveInterceptor::Executor(
+                ActiveExecutorInterceptor::new(Arc::new(SequenceChainInterceptor(chain)))
+            ));
+        }
+
+        Ok(result)
     }
 
-    /// Combina interceptor in chain unificata
+    /// Combina interceptor in chain unificata - ottimizzato per evitare allocazioni
     fn plug_and_sort_chain(
-        global: &Vec<ActiveGlobalInterceptor>,
-        directive: Vec<ActiveDirectiveInterceptor>,
+        global: &[ActiveGlobalInterceptor], // Slice
+        directive: &[ActiveDirectiveInterceptor], // Slice
         target_interceptor: ActiveInterceptor,
     ) -> Vec<ActiveInterceptor> {
-        let mut unified = Vec::new();
+        let total_capacity = global.len() + directive.len() + 1;
+        let mut unified = Vec::with_capacity(total_capacity);
 
         // Aggiungi interceptor globali
         for interceptor in global {
@@ -246,52 +291,63 @@ impl InterceptorEngine {
 
         // Aggiungi interceptor di direttive
         for interceptor in directive {
-            unified.push(ActiveInterceptor::Directive(interceptor));
+            unified.push(ActiveInterceptor::Directive(interceptor.clone()));
         }
 
-        // Ordina per priorità globale
-        unified.sort_by(ActiveInterceptor::sort);
+        // Ordina per priorità globale - ottimizzato
+        unified.sort_unstable_by(ActiveInterceptor::sort);
 
-        // Aggiungo al fondo delle esecuzioni gli interceptor che eseguono il task vero e proprio e gli interceptor a più basso livello
-        // Come per esempio, gli interceptor dei job, o, gli interceptor dei command...
-        // In questo modo ho:
-        // - interceptor definition -> definition   -> [interceptor command -> command]
-        // - interceptor pipeline   -> pipeline     -> [interceptor stage -> stage      -> [interceptor job -> job -> [interceptor command -> command]]
+        // Aggiungi target interceptor alla fine
         unified.push(target_interceptor);
 
         unified
     }
 
-    /// Esegue la chain unificata
+    /// Esegue la chain unificata - ottimizzata
     pub async fn execute_chain<'a>(
         context: InterceptorContext<'a>,
         chain: &'a [ActiveInterceptor],
     ) -> InterceptorResult {
-        let mut index = 0;
-        let mut result: InterceptorResult = Err(LoomError::execution("Nothing Executed!"));
-        while index < chain.len() {
-            if chain[index].need_chain() {
-                result = Self::execute_chain_recursive(context.clone(), chain, index).await;
-                break
-            } else {
-                result = Self::launch_interceptor(context.clone(), chain, index, empty_execute_intercept_next()).await
-            }
-            index += 1
+        if chain.is_empty() {
+            return Err(LoomError::execution("Empty interceptor chain"));
         }
 
-        result
+        let mut index = 0;
+
+        // Cerca il primo interceptor che ha bisogno di chain
+        while index < chain.len() {
+            if chain[index].need_chain() {
+                return Self::execute_chain_recursive(context, chain, index).await;
+            } else {
+                // Esegui interceptor senza chain
+                let result = Self::launch_interceptor(
+                    context.clone(),
+                    chain,
+                    index,
+                    empty_execute_intercept_next()
+                ).await?;
+
+                // Se è l'ultimo o abbiamo un risultato conclusivo, return
+                if index == chain.len() - 1 {
+                    return Ok(result);
+                }
+            }
+            index += 1;
+        }
+
+        Err(LoomError::execution("No interceptor executed"))
     }
 
-    // TODO: IMPORTANTE!!! La catena allo stesso livello dell'albero, ma, successiva, deve avere come parametro, il risultato della precedente!!!
-
-    /// Esecuzione ricorsiva della chain
+    /// Esecuzione ricorsiva della chain - ottimizzata
     async fn execute_chain_recursive<'a>(
         context: InterceptorContext<'a>,
         chain: &'a [ActiveInterceptor],
         index: usize,
     ) -> InterceptorResult {
+        if index >= chain.len() {
+            return Err(LoomError::execution("Chain index out of bounds"));
+        }
 
-        // let next = Self::create_next_chain(chain, index + 1);
         Self::launch_interceptor(
             context,
             chain,
@@ -300,6 +356,7 @@ impl InterceptorEngine {
         ).await
     }
 
+    /// Launch interceptor ottimizzato
     async fn launch_interceptor<'a>(
         context: InterceptorContext<'a>,
         chain: &'a [ActiveInterceptor],
@@ -308,41 +365,34 @@ impl InterceptorEngine {
     ) -> InterceptorResult {
         match &chain[index] {
             ActiveInterceptor::Global(global) => {
-                global.interceptor.intercept(context, &global.config, Box::new(next)).await
-                // Err("stuff".to_string())
+                global.interceptor.intercept(context, &global.config, next).await
             }
             ActiveInterceptor::Directive(directive) => {
-                directive.interceptor.intercept(context, Box::new(next)).await
+                directive.interceptor.intercept(context, next).await
             }
             ActiveInterceptor::Executor(executor) => {
-                executor.interceptor.intercept(context, &executor.config, Box::new(next)).await
-                // Err("random".to_string())
+                executor.interceptor.intercept(context, &executor.config, next).await
             }
         }
     }
 
+    /// Create next chain - ottimizzato con bound checking
     fn create_next_chain<'a>(
         chain: &'a [ActiveInterceptor],
         next_index: usize
     ) -> Box<InterceptorChain<'a>> {
-        Box::new(move |context: InterceptorContext<'a>,| {
-            Box::pin(Self::execute_chain_recursive(context, chain, next_index))
+        Box::new(move |context: InterceptorContext<'a>| {
+            if next_index < chain.len() {
+                Box::pin(Self::execute_chain_recursive(context, chain, next_index))
+            } else {
+                Box::pin(async move {
+                    Err(LoomError::execution("End of interceptor chain reached"))
+                })
+            }
         })
     }
 
-    // fn register_builtin_interceptors(&mut self) {
-    //     // Interceptor globali built-in
-    //     self.register_global(Arc::new(SecurityAuditInterceptor::new())).unwrap();
-    //     self.register_global(Arc::new(PerformanceMonitorInterceptor::new())).unwrap();
-    //     self.register_global(Arc::new(ComplianceInterceptor::new())).unwrap();
-    //
-    //     // Interceptor di direttive built-in
-    //     self.register_directive(Arc::new(TimeoutDirectiveInterceptor::new())).unwrap();
-    //     self.register_directive(Arc::new(ParallelDirectiveInterceptor::new())).unwrap();
-    //     self.register_directive(Arc::new(IfDirectiveInterceptor::new())).unwrap();
-    // }
-
-    /// Diagnostica: lista interceptor attivi per un target
+    /// Diagnostica: lista interceptor attivi per un target - ottimizzata
     pub fn list_active_interceptors(&self, target: ExecutionScope) -> Vec<(String, String, i32)> {
         let context = ExecutionContext {
             variables: HashMap::new(),
@@ -355,9 +405,9 @@ impl InterceptorEngine {
         };
 
         let global = self.global_manager.get_active(&context);
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(global.len());
 
-        for interceptor in global {
+        for interceptor in &global {
             result.push((
                 interceptor.name.clone(),
                 "global".to_string(),
@@ -365,14 +415,32 @@ impl InterceptorEngine {
             ));
         }
 
-        result.sort_by(|a, b| b.2.cmp(&a.2));
+        result.sort_unstable_by(|a, b| b.2.cmp(&a.2));
         result
     }
 
     /// Valida che non ci siano conflitti di priorità
     pub fn validate_priority_conflicts(&self) -> Result<(), Vec<String>> {
-        // Per ora implementazione semplice
-        // In pratica potresti fare check più sofisticati
+        // Implementazione semplificata
         Ok(())
+    }
+
+    /// Clear cache - utile per testing
+    pub fn clear_cache(&self) {
+        if let Ok(mut cache) = self.chain_cache.write() {
+            cache.clear();
+        }
+    }
+
+    /// Cache statistics per monitoring
+    pub fn cache_stats(&self) -> Option<usize> {
+        self.chain_cache.read().ok().map(|cache| cache.len())
+    }
+}
+
+/// Default implementation ottimizzata
+impl Default for InterceptorEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }
