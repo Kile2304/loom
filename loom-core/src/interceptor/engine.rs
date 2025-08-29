@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use smart_default::SmartDefault;
 use crate::ast::Statement;
 use crate::context::LoomContext;
 use crate::error::{LoomError, LoomResult};
@@ -26,23 +27,23 @@ use crate::types::ParallelizationKind;
 /// Middleware Pattern (Filter Chain Pattern) ottimizzato
 /// Esegue i vari Task/Job/Command, ma, solo dopo aver eseguito
 /// Gli interceptor globali e le direttive, formando per l'appunto un Middleware Pattern
+#[derive(SmartDefault)]
 pub struct InterceptorEngine {
+    #[default(GlobalInterceptorManager::new())]
     global_manager: GlobalInterceptorManager,
+    #[default(DirectiveInterceptorManager::new())]
     directive_manager: DirectiveInterceptorManager,
+    #[default(HookRegistry::new())]
     hook_registry: HookRegistry,
 
     // Cache per evitare ricostruzione frequente di chain
+    #[default(RwLock::new(HashMap::new()))]
     chain_cache: RwLock<HashMap<String, Vec<ActiveInterceptor>>>,
 }
 
 impl InterceptorEngine {
     pub fn new() -> Self {
-        Self {
-            global_manager: GlobalInterceptorManager::new(),
-            directive_manager: DirectiveInterceptorManager::new(),
-            hook_registry: HookRegistry::new(),
-            chain_cache: RwLock::new(HashMap::new()),
-        }
+        Self::default()
     }
 
     /// Registra interceptor globale
@@ -435,12 +436,5 @@ impl InterceptorEngine {
     /// Cache statistics per monitoring
     pub fn cache_stats(&self) -> Option<usize> {
         self.chain_cache.read().ok().map(|cache| cache.len())
-    }
-}
-
-/// Default implementation ottimizzata
-impl Default for InterceptorEngine {
-    fn default() -> Self {
-        Self::new()
     }
 }

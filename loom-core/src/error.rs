@@ -1,30 +1,36 @@
+use derive_more::with_trait::Display;
 use crate::types::Position;
-use std::fmt;
 use crate::interceptor::scope::ExecutionScope;
+use thiserror::Error;
 
 /// Main error type for Loom operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum LoomError {
     /// Parsing errors
+    #[error("Parse error at {position}: {message}")]
     ParseError {
         message: String,
         position: Position,
     },
 
     /// Semantic validation errors
+    #[error("Validation error{}: {message}", position.as_ref().map(|p| format!(" at {}", p)).unwrap_or_default())]
     ValidationError {
         message: String,
         position: Option<Position>,
     },
 
     /// Runtime execution errors
+    #[error("Execution error{}: {message}{}", position.as_ref().map(|p| format!(" at {}", p)).unwrap_or_default(), cause.as_ref().map(|c| format!(" (caused by: {})", c)).unwrap_or_default())]
     ExecutionError {
         message: String,
         position: Option<Position>,
+        #[source]
         cause: Option<Box<LoomError>>,
     },
 
     /// Import/module resolution errors
+    #[error("Import error at {position} importing '{import_path}': {message}")]
     ImportError {
         message: String,
         import_path: String,
@@ -32,6 +38,7 @@ pub enum LoomError {
     },
 
     /// Type system errors
+    #[error("Type error at {position}: expected {expected}, found {found}")]
     TypeError {
         expected: String,
         found: String,
@@ -39,6 +46,7 @@ pub enum LoomError {
     },
 
     /// Undefined reference errors
+    #[error("Undefined {kind} '{name}' at {position}")]
     UndefinedError {
         name: String,
         kind: UndefinedKind,
@@ -46,36 +54,35 @@ pub enum LoomError {
     },
 
     /// I/O and file system errors
+    #[error("I/O error{}: {message}", path.as_ref().map(|p| format!(" on '{}'", p)).unwrap_or_default())]
     IoError {
         message: String,
         path: Option<String>,
     },
 
     /// Configuration errors
+    #[error("Configuration error{}: {message}", path.as_ref().map(|p| format!(" in '{}'", p)).unwrap_or_default())]
     ConfigError {
         message: String,
         path: Option<String>,
     },
 
     /// Plugin system errors
+    #[error("Plugin error in '{plugin_name}': {message}")]
     PluginError {
         message: String,
         plugin_name: String,
     },
 
-    /// System/external command errors
-    SystemError {
-        message: String,
-        exit_code: Option<i32>,
-        command: Option<String>,
-    },
-    
+    #[error(transparent)]
     InterceptorError {
+        #[from]
         error: InterceptorError,
         interceptor_stack: Vec<String>,
     },
 
     /// Errori di conversione tra tipi
+    #[error("Conversion error{}: cannot convert '{value}' from {from_type} to {to_type}", position.as_ref().map(|p| format!(" at {}", p)).unwrap_or_default())]
     ConversionError {
         from_type: String,
         to_type: String,
@@ -84,6 +91,7 @@ pub enum LoomError {
     },
 
     /// Errori di lock/concorrenza
+    #[error("Concurrency error on resource '{resource}' during '{operation}': {message}")]
     ConcurrencyError {
         resource: String,
         operation: String,
@@ -91,6 +99,7 @@ pub enum LoomError {
     },
 
     /// Errori di valutazione di espressioni
+    #[error("Expression error in {expression_type} at {position}: {message}")]
     ExpressionError {
         expression_type: String,
         message: String,
@@ -98,6 +107,7 @@ pub enum LoomError {
     },
 
     /// Errori di funzioni non implementate
+    #[error("Feature '{feature}' not implemented in context '{context}'{}", position.as_ref().map(|p| format!(" at {}", p)).unwrap_or_default())]
     NotImplementedError {
         feature: String,
         context: String,
@@ -105,6 +115,7 @@ pub enum LoomError {
     },
 
     /// Errori di definizione non trovata
+    #[error("Definition '{name}' not found at {position}. Available definitions: [{}]", available_definitions.join(", "))]
     DefinitionNotFoundError {
         name: String,
         available_definitions: Vec<String>,
@@ -112,6 +123,11 @@ pub enum LoomError {
     },
 
     /// Errori di parameter mismatch
+    #[error("Parameter error in '{definition_name}'{}: {}",
+        position.as_ref().map(|p| format!(" at {}", p)).unwrap_or_default(),
+        parameter_name.as_ref().map(|p| format!("invalid parameter '{}'", p))
+            .unwrap_or_else(|| format!("expected {} parameters, got {}", expected_count, provided_count))
+    )]
     ParameterError {
         definition_name: String,
         expected_count: usize,
@@ -121,62 +137,88 @@ pub enum LoomError {
     },
 
     /// Errori di chain interceptor
+    #[error("Interceptor chain error at position {chain_position} in '{interceptor_name}': {cause}")]
     InterceptorChainError {
         interceptor_name: String,
         chain_position: usize,
+        #[source]
         cause: Box<LoomError>,
     },
-    
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum InterceptorError {
     // Directive interceptor errors
+    #[error("Interceptor error: While executing the Directive Interceptor '{name}' the following error occured '{message}'")]
     Directive {
         name: String,
         message: String,
     },
+
     // Global interceptor errors
+    #[error("Interceptor error: While executing the Global Interceptor '{name}' the following error occured '{message}'")]
     Global {
         name: String,
         message: String,
     },
+
     // Execution interceptor errors with scope
+    #[error("Interceptor error: While executing the Execution Interceptor (scope) '{scope:?}' the following error occured '{message}'")]
     Execution {
         scope: ExecutionScope,
         message: String,
     },
+
     // Command execution errors
+    #[error("Command execution error{}: '{}' - {}",
+        exit_code.map(|c| format!(" (exit code {})", c)).unwrap_or_default(),
+        command,
+        message
+    )]
     CommandExecution {
         command: String,
         message: String,
         exit_code: Option<i32>,
     },
+
     // Definition resolution errors
+    #[error("Definition resolution error: '{name}' - {message}")]
     DefinitionResolution {
         name: String,
         message: String,
     },
+
     // Parameter validation errors
+    #[error("Parameter validation error: '{name}' - {message}")]
     ParameterValidation {
         name: String,
         message: String,
     },
+
     // Chain execution errors
+    #[error("Chain execution error: {message}")]
     ChainExecution {
         message: String,
     },
+
     // Context access errors
+    #[error("Context access error: {message}")]
     ContextAccess {
         message: String,
     },
+
     // Pipeline execution errors
+    #[error("Pipeline execution error in pipeline '{name}'{}: {message}",
+        stage.as_ref().map(|s| format!(" at stage '{}'", s)).unwrap_or_default()
+    )]
     PipelineExecution {
         name: String,
         stage: Option<String>,
         message: String,
     },
+
     // Job execution errors
+    #[error("Job execution error in job '{name}': {message}")]
     JobExecution {
         name: String,
         message: String,
@@ -184,15 +226,23 @@ pub enum InterceptorError {
 }
 
 /// Types of undefined references
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display)]
 pub enum UndefinedKind {
+    #[display("recipe")]
     Recipe,
+    #[display("job")]
     Job,
+    #[display("pipeline")]
     Pipeline,
+    #[display("variable")]
     Variable,
+    #[display("function")]
     Function,
+    #[display("enum")]
     Enum,
+    #[display("enum variant")]
     EnumVariant,
+    #[display("import")]
     Import,
 }
 
@@ -276,28 +326,6 @@ impl LoomError {
         }
     }
 
-    /// Create a system error
-    pub fn system(message: impl Into<String>) -> Self {
-        Self::SystemError {
-            message: message.into(),
-            exit_code: None,
-            command: None,
-        }
-    }
-
-    /// Create a system error with exit code
-    pub fn system_with_exit(
-        message: impl Into<String>,
-        exit_code: i32,
-        command: impl Into<String>
-    ) -> Self {
-        Self::SystemError {
-            message: message.into(),
-            exit_code: Some(exit_code),
-            command: Some(command.into()),
-        }
-    }
-    
     /// Create an interceptor error with directive scope
     pub fn directive_interceptor(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -308,7 +336,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error with global scope
     pub fn global_interceptor(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -319,7 +347,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error with execution scope
     pub fn execution_interceptor(scope: ExecutionScope, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -330,7 +358,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for command execution
     pub fn command_execution(command: impl Into<String>, message: impl Into<String>, exit_code: Option<i32>) -> Self {
         Self::InterceptorError {
@@ -342,7 +370,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for definition resolution
     pub fn definition_resolution(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -353,7 +381,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for parameter validation
     pub fn parameter_validation(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -364,7 +392,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for chain execution
     pub fn chain_execution(message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -374,7 +402,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for context access
     pub fn context_access(message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -384,7 +412,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for pipeline execution
     pub fn pipeline_execution(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -396,7 +424,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for pipeline execution with stage
     pub fn pipeline_stage_execution(name: impl Into<String>, stage: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -408,7 +436,7 @@ impl LoomError {
             interceptor_stack: Vec::new(),
         }
     }
-    
+
     /// Create an interceptor error for job execution
     pub fn job_execution(name: impl Into<String>, message: impl Into<String>) -> Self {
         Self::InterceptorError {
@@ -567,291 +595,29 @@ pub enum ErrorSeverity {
     Info,
 }
 
-impl fmt::Display for LoomError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::ParseError { message, position } => {
-                write!(f, "Parse error at {}:{}: {}", position.line, position.column, message)
-            }
-            Self::ValidationError { message, position } => {
-                if let Some(pos) = position {
-                    write!(f, "Validation error at {}:{}: {}", pos.line, pos.column, message)
-                } else {
-                    write!(f, "Validation error: {}", message)
-                }
-            }
-            Self::ExecutionError { message, position, cause } => {
-                if let Some(pos) = position {
-                    write!(f, "Execution error at {}:{}: {}", pos.line, pos.column, message)?;
-                } else {
-                    write!(f, "Execution error: {}", message)?;
-                }
-                if let Some(cause) = cause {
-                    write!(f, " (caused by: {})", cause)?;
-                }
-                Ok(())
-            }
-            Self::ImportError { message, import_path, position } => {
-                write!(f, "Import error at {}:{} importing '{}': {}",
-                       position.line, position.column, import_path, message)
-            }
-            Self::TypeError { expected, found, position } => {
-                write!(f, "Type error at {}:{}: expected {}, found {}",
-                       position.line, position.column, expected, found)
-            }
-            Self::UndefinedError { name, kind, position } => {
-                write!(f, "Undefined {} '{}' at {}:{}",
-                       kind, name, position.line, position.column)
-            }
-            Self::IoError { message, path } => {
-                if let Some(path) = path {
-                    write!(f, "I/O error on '{}': {}", path, message)
-                } else {
-                    write!(f, "I/O error: {}", message)
-                }
-            }
-            Self::ConfigError { message, path } => {
-                if let Some(path) = path {
-                    write!(f, "Configuration error in '{}': {}", path, message)
-                } else {
-                    write!(f, "Configuration error: {}", message)
-                }
-            }
-            Self::PluginError { message, plugin_name } => {
-                write!(f, "Plugin error in '{}': {}", plugin_name, message)
-            }
-            Self::SystemError { message, exit_code, command } => {
-                if let (Some(code), Some(cmd)) = (exit_code, command) {
-                    write!(f, "System error (exit code {}): {} - {}", code, cmd, message)
-                } else {
-                    write!(f, "System error: {}", message)
-                }
-            }
-            Self::ConversionError { from_type, to_type, value, position } => {
-                if let Some(pos) = position {
-                    write!(f, "Conversion error at {}:{}: cannot convert '{}' from {} to {}",
-                           pos.line, pos.column, value, from_type, to_type)
-                } else {
-                    write!(f, "Conversion error: cannot convert '{}' from {} to {}",
-                           value, from_type, to_type)
-                }
-            }
-            Self::ConcurrencyError { resource, operation, message } => {
-                write!(f, "Concurrency error on resource '{}' during '{}': {}",
-                       resource, operation, message)
-            }
-            Self::ExpressionError { expression_type, message, position } => {
-                write!(f, "Expression error in {} at {}:{}: {}",
-                       expression_type, position.line, position.column, message)
-            }
-            Self::NotImplementedError { feature, context, position } => {
-                if let Some(pos) = position {
-                    write!(f, "Feature '{}' not implemented in context '{}' at {}:{}",
-                           feature, context, pos.line, pos.column)
-                } else {
-                    write!(f, "Feature '{}' not implemented in context '{}'",
-                           feature, context)
-                }
-            }
-            Self::DefinitionNotFoundError { name, available_definitions, position } => {
-                write!(f, "Definition '{}' not found at {}:{}. Available definitions: [{}]",
-                       name, position.line, position.column,
-                       available_definitions.join(", "))
-            }
-            Self::ParameterError { definition_name, expected_count, provided_count, parameter_name, position } => {
-                let pos_str = position.as_ref().map(|p| format!(" at {}:{}", p.line, p.column)).unwrap_or_default();
-                if let Some(param) = parameter_name {
-                    write!(f, "Parameter error in '{}'{}: invalid parameter '{}'",
-                           definition_name, pos_str, param)
-                } else {
-                    write!(f, "Parameter error in '{}'{}: expected {} parameters, got {}",
-                           definition_name, pos_str, expected_count, provided_count)
-                }
-            }
-            Self::InterceptorChainError { interceptor_name, chain_position, cause } => {
-                write!(f, "Interceptor chain error at position {} in '{}': {}",
-                       chain_position, interceptor_name, cause)
-            }
-            Self::InterceptorError { error, interceptor_stack } => {
-                let stack = 
-                    interceptor_stack.join(", ");
-                match error {
-                    InterceptorError::Directive { name, message } => {
-                        write!(
-                            f,
-                            "Interceptor error: While executing the Directive Interceptor '{}' the following error occured '{}'.\nThe following interceptor have been already been executed: [ {} ]",
-                            name,
-                            message,
-                            stack
-                        )
-                    }
-                    InterceptorError::Global { name, message } => {
-                        write!(
-                            f,
-                            "Interceptor error: While executing the Global Interceptor '{}' the following error occured '{}'.\nThe following interceptor have been already been executed: [ {} ]",
-                            name,
-                            message,
-                            stack
-                        )
-                    }
-                    InterceptorError::Execution { scope, message } => {
-                        write!(
-                            f,
-                            "Interceptor error: While executing the Execution Interceptor (scope) '{:?}' the following error occured '{}'.\nThe following interceptor have been already been executed: [ {} ]",
-                            scope,
-                            message,
-                            stack
-                        )
-                    },
-                    InterceptorError::CommandExecution { command, message, exit_code } => {
-                        if let Some(code) = exit_code {
-                            write!(
-                                f,
-                                "Command execution error (exit code {}): '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
-                                code,
-                                command,
-                                message,
-                                stack
-                            )
-                        } else {
-                            write!(
-                                f,
-                                "Command execution error: '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
-                                command,
-                                message,
-                                stack
-                            )
-                        }
-                    },
-                    InterceptorError::DefinitionResolution { name, message } => {
-                        write!(
-                            f,
-                            "Definition resolution error: '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
-                            name,
-                            message,
-                            stack
-                        )
-                    },
-                    InterceptorError::ParameterValidation { name, message } => {
-                        write!(
-                            f,
-                            "Parameter validation error: '{}' - {}.\nThe following interceptor have been already been executed: [ {} ]",
-                            name,
-                            message,
-                            stack
-                        )
-                    },
-                    InterceptorError::ChainExecution { message } => {
-                        write!(
-                            f,
-                            "Chain execution error: {}.\nThe following interceptor have been already been executed: [ {} ]",
-                            message,
-                            stack
-                        )
-                    },
-                    InterceptorError::ContextAccess { message } => {
-                        write!(
-                            f,
-                            "Context access error: {}.\nThe following interceptor have been already been executed: [ {} ]",
-                            message,
-                            stack
-                        )
-                    },
-                    InterceptorError::PipelineExecution { name, stage, message } => {
-                        if let Some(stage_name) = stage {
-                            write!(
-                                f,
-                                "Pipeline execution error in pipeline '{}' at stage '{}': {}.\nThe following interceptor have been already been executed: [ {} ]",
-                                name,
-                                stage_name,
-                                message,
-                                stack
-                            )
-                        } else {
-                            write!(
-                                f,
-                                "Pipeline execution error in pipeline '{}': {}.\nThe following interceptor have been already been executed: [ {} ]",
-                                name,
-                                message,
-                                stack
-                            )
-                        }
-                    },
-                    InterceptorError::JobExecution { name, message } => {
-                        write!(
-                            f,
-                            "Job execution error in job '{}': {}.\nThe following interceptor have been already been executed: [ {} ]",
-                            name,
-                            message,
-                            stack
-                        )
-                    }
-
-                }
-
-            }
-        }
-    }
-}
-
-impl fmt::Display for UndefinedKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Recipe => write!(f, "recipe"),
-            Self::Job => write!(f, "job"),
-            Self::Pipeline => write!(f, "pipeline"),
-            Self::Variable => write!(f, "variable"),
-            Self::Function => write!(f, "function"),
-            Self::Enum => write!(f, "enum"),
-            Self::EnumVariant => write!(f, "enum variant"),
-            Self::Import => write!(f, "import"),
-        }
-    }
-}
-
-impl std::error::Error for LoomError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::ExecutionError { cause: Some(cause), .. } => Some(cause.as_ref()),
-            _ => None,
-        }
-    }
-}
-
-// Conversion from std::io::Error
+// Automatic conversions
 impl From<std::io::Error> for LoomError {
     fn from(error: std::io::Error) -> Self {
         Self::io(error.to_string())
     }
 }
 
-// Conversion from serde_json::Error
 impl From<serde_json::Error> for LoomError {
     fn from(error: serde_json::Error) -> Self {
         Self::validation(format!("JSON error: {}", error))
     }
 }
 
-// Conversion from String
 impl From<String> for LoomError {
     fn from(error: String) -> Self {
         Self::execution(error)
     }
 }
 
-// Conversion from &str
 impl<'a> From<&'a str> for LoomError {
     fn from(error: &'a str) -> Self {
         Self::execution(error)
     }
-}
-
-// Macro to help with string error conversion
-#[macro_export]
-macro_rules! string_to_loom_error {
-    ($result:expr) => {
-        $result.map_err(|e: String| crate::error::LoomError::from(e))
-    };
 }
 
 // Macro for creating execution errors
@@ -862,74 +628,5 @@ macro_rules! loom_error {
     };
     ($fmt:expr, $($arg:tt)*) => {
         Err(crate::error::LoomError::execution(format!($fmt, $($arg)*)))
-    };
-}
-
-// Macro for creating command execution errors
-#[macro_export]
-macro_rules! command_error {
-    ($cmd:expr, $msg:expr) => {
-        Err(crate::error::LoomError::command_execution($cmd, $msg, None))
-    };
-    ($cmd:expr, $msg:expr, $code:expr) => {
-        Err(crate::error::LoomError::command_execution($cmd, $msg, Some($code)))
-    };
-    ($cmd:expr, $fmt:expr, $($arg:tt)*) => {
-        Err(crate::error::LoomError::command_execution($cmd, format!($fmt, $($arg)*), None))
-    };
-}
-
-// Macro for creating definition resolution errors
-#[macro_export]
-macro_rules! definition_error {
-    ($name:expr, $msg:expr) => {
-        Err(crate::error::LoomError::definition_resolution($name, $msg))
-    };
-    ($name:expr, $fmt:expr, $($arg:tt)*) => {
-        Err(crate::error::LoomError::definition_resolution($name, format!($fmt, $($arg)*)))
-    };
-}
-
-// Macro for creating parameter validation errors
-#[macro_export]
-macro_rules! param_error {
-    ($name:expr, $msg:expr) => {
-        Err(crate::error::LoomError::parameter_validation($name, $msg))
-    };
-    ($name:expr, $fmt:expr, $($arg:tt)*) => {
-        Err(crate::error::LoomError::parameter_validation($name, format!($fmt, $($arg)*)))
-    };
-}
-
-// Macro for creating context access errors
-#[macro_export]
-macro_rules! context_error {
-    ($msg:expr) => {
-        Err(crate::error::LoomError::context_access($msg))
-    };
-    ($fmt:expr, $($arg:tt)*) => {
-        Err(crate::error::LoomError::context_access(format!($fmt, $($arg)*)))
-    };
-}
-
-// Macro for creating pipeline execution errors
-#[macro_export]
-macro_rules! pipeline_error {
-    ($name:expr, $msg:expr) => {
-        Err(crate::error::LoomError::pipeline_execution($name, $msg))
-    };
-    ($name:expr, $fmt:expr, $($arg:tt)*) => {
-        Err(crate::error::LoomError::pipeline_execution($name, format!($fmt, $($arg)*)))
-    };
-}
-
-// Macro for creating job execution errors
-#[macro_export]
-macro_rules! job_error {
-    ($name:expr, $msg:expr) => {
-        Err(crate::error::LoomError::job_execution($name, $msg))
-    };
-    ($name:expr, $fmt:expr, $($arg:tt)*) => {
-        Err(crate::error::LoomError::job_execution($name, format!($fmt, $($arg)*)))
     };
 }

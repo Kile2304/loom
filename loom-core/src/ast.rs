@@ -5,6 +5,7 @@ use crate::context::{LoomContext, Module};
 use crate::definition::ArgDefinition;
 use crate::error::{LoomError, LoomResult, UndefinedKind};
 use crate::interceptor::context::ExecutionContext;
+use crate::loom_error;
 
 /// A complete definition (recipe, job, pipeline, etc.)
 #[derive(Debug, Clone, PartialEq)]
@@ -141,16 +142,6 @@ pub struct DirectiveCall {
     pub name: Arc<str>,
     pub args: Arc<[ArgDefinition]>,
     pub position: Position,
-}
-
-/// Directive argument
-#[derive(Debug, Clone, PartialEq)]
-pub enum DirectiveArg {
-    Positional(Arc<Expression>),
-    Named {
-        name: Arc<str>,
-        value: Arc<Expression>,
-    },
 }
 
 impl Block {

@@ -4,6 +4,7 @@ use crate::error::{LoomError, LoomResult};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use smart_default::SmartDefault;
 // TODO: In futuro pensasre se integrare il supporto di namespace
 
 // TODO: Rendere il LoomContext più avanzato, in modo che ci sia un oggetto esterno contenente la cache
@@ -15,7 +16,7 @@ pub type DefinitionId = uuid::Uuid;
 pub type EnumId = uuid::Uuid;
 
 /// Main context holding all parsed workflow information
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LoomContext {
     /// Moduli caricati/file
     pub modules: HashMap<ModuleId, Arc<Module>>,
@@ -44,12 +45,7 @@ pub enum ImportKind {
 
 impl LoomContext {
     pub fn new() -> Self {
-        Self {
-            definitions_ref: HashMap::new(),
-            enums_def_ref: HashMap::new(),
-            dependencies: HashMap::new(),
-            modules: HashMap::new(),
-        }
+        Self::default()
     }
 
     // /// Add a parsed workflow file to the context
@@ -245,11 +241,5 @@ impl LoomContext {
                 }
             }
         }
-    }
-}
-
-impl Default for LoomContext {
-    fn default() -> Self {
-        Self::new()
     }
 }

@@ -1,9 +1,7 @@
-use std::collections::HashMap;
-use crate::ast::DirectiveCall;
 use crate::definition::{ArgDefinition, ParameterDefinition};
+use crate::definition::directive::scope::DirectiveScope;
+use crate::definition::parameter::{determine_argument_type, validate_named_arguments, validate_positional_arguments, ArgumentType};
 use crate::error::LoomResult;
-use crate::interceptor::scope::DirectiveScope;
-use crate::types::LoomValue;
 
 /// Definizione di una direttiva (per il parser)
 pub trait DirectiveDefinition: Send + Sync {
@@ -21,7 +19,24 @@ pub trait DirectiveDefinition: Send + Sync {
 
     /// Validazione customizzata dei parametri
     fn validate_parameters(&self, args: &[ArgDefinition]) -> LoomResult<()> {
-        // Default implementation
+        let parameters = self.parameters();
+
+        // Validazione della conformità dei parametri della direttiva
+        // TODO: Spostare su registry
+        // validate_parameter_definitions(&parameters)?;
+
+        // Determina il tipo di argomenti (tutti posizionali o tutti named)
+        let arg_type = determine_argument_type(args)?;
+
+        match arg_type {
+            ArgumentType::Positional => {
+                validate_positional_arguments(args, &parameters, self.name())?;
+            }
+            ArgumentType::Named => {
+                validate_named_arguments(args, &parameters, self.name())?;
+            }
+        }
+
         Ok(())
     }
 
@@ -35,6 +50,4 @@ pub trait DirectiveDefinition: Send + Sync {
         &[]
     }
 
-    /// Trasforma il DirectiveCall in parametri strutturati per l'executor
-    fn parse_args(&self, call: &DirectiveCall) -> LoomResult<HashMap<String, LoomValue>>;
 }

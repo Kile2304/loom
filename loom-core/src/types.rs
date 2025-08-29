@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use derive_more::Display;
 use serde_json::Value;
+use smart_default::SmartDefault;
 use crate::ast::Expression;
 use crate::context::LoomContext;
 use crate::error::{LoomError, LoomResult};
@@ -129,22 +131,16 @@ pub enum ParallelizationKind {
 }
 
 /// Position information for error reporting
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Display, SmartDefault)]
+#[display("{line}:{column}")]
 pub struct Position {
+    #[default = 1]
     pub line: usize,
+    #[default = 1]
     pub column: usize,
     pub file: Option<String>,
 }
 
-impl Default for Position {
-    fn default() -> Self {
-        Self {
-            line: 1,
-            column: 1,
-            file: None,
-        }
-    }
-}
 
 impl Signature {
 

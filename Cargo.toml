@@ -32,3 +32,6 @@ strip = "debuginfo"
 # Async e Threading
 tokio = { version = "1.47.1", features = ["macros", "fs", "rt", "time", "sync"] }
 async-trait = "0.1.88"
+thiserror = "2.0.16"
+derive_more = { version = "2.0.1", features = ["display"] }
+smart-default = "0.7.1"

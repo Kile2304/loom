@@ -4,6 +4,7 @@ use crate::error::{LoomError, LoomResult};
 use crate::interceptor::context::ExecutionContext;
 use crate::types::DefinitionKind;
 use std::sync::Arc;
+use smart_default::SmartDefault;
 
 /// Quando una direttiva viene eseguita nel ciclo di vita
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -20,23 +21,6 @@ pub enum ExecutionKind {
     ContextEvaluation,
     /// Durante la validazione sintattica
     Validation,
-}
-
-/// Livello dove può essere applicata una direttiva
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DirectiveScope {
-    /// A livello di definition (recipe, job, pipeline)
-    Definition,
-    /// A livello di statement (comando, if, for)
-    Statement,
-    /// A livello di stage (solo per pipeline)
-    Stage,
-    /// Globale (file level)
-    Global,
-    /// Single command level
-    Command,
-    /// Block of commands (like if-else)
-    Block
 }
 
 /// ExecutionActivity ottimizzata con Arc per evitare clone pesanti
@@ -234,37 +218,23 @@ impl ExecutionActivity {
 }
 
 /// BlockTarget ottimizzato con Arc slices
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, SmartDefault)]
 pub struct BlockTarget {
+    #[default(Arc::new([]))]
     pub directives: Arc<[DirectiveCall]>,
+    #[default(Arc::new([]))]
     pub commands: Arc<[Statement]>,
+    #[default(Arc::new([]))]
     pub label: Arc<[Expression]>,
 }
 
-impl Default for BlockTarget {
-    fn default() -> Self {
-        Self {
-            directives: Arc::new([]),
-            commands: Arc::new([]),
-            label: Arc::new([]),
-        }
-    }
-}
-
 /// JobTarget ottimizzato
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, SmartDefault)]
 pub struct JobTarget {
+    #[default(Arc::from(""))]
     pub name: Arc<str>,
+    #[default(Arc::new([]))]
     pub blocks: Arc<[BlockTarget]>,
-}
-
-impl Default for JobTarget {
-    fn default() -> Self {
-        Self {
-            name: Arc::from(""),
-            blocks: Arc::new([]),
-        }
-    }
 }
 
 /// Hook system per eventi granulari
