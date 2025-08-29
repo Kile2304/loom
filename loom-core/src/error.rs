@@ -74,9 +74,15 @@ pub enum LoomError {
         plugin_name: String,
     },
 
-    #[error(transparent)]
+    #[error("Interceptor error: {error}{}",
+    if interceptor_stack.is_empty() {
+        String::new()
+    } else {
+        format!(" (stack: {})", interceptor_stack.join(" -> "))
+    }
+    )]
     InterceptorError {
-        #[from]
+        #[source]
         error: InterceptorError,
         interceptor_stack: Vec<String>,
     },
